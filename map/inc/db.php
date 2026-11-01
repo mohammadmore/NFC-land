@@ -1,0 +1,368 @@
+<?php
+/**
+ * NFC Event Tag Scoring - Database Connection (PDO) & Auto-Installer
+ */
+
+if (!defined('APP_INIT')) {
+    die('دسترسی مستقیم مجاز نیست.');
+}
+
+/**
+ * دریافت اتصال پایگاه داده و ساخت خودکار جداول و داده‌های اولیه
+ */
+function get_db() {
+    static $pdo = null;
+
+    if ($pdo !== null) {
+        return $pdo;
+    }
+
+    $driver = defined('DB_DRIVER') ? DB_DRIVER : 'sqlite';
+
+    if ($driver === 'sqlite') {
+        $dbPath = defined('DB_PATH') ? DB_PATH : (__DIR__ . '/../data/database.sqlite');
+        $dir = dirname($dbPath);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0777, true);
+        }
+        @chmod($dir, 0777);
+
+        $dsn = 'sqlite:' . $dbPath;
+        try {
+            $pdo = new PDO($dsn, null, null, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]);
+            $pdo->exec('PRAGMA foreign_keys = ON;');
+            $pdo->exec('PRAGMA journal_mode = WAL;');
+            $pdo->exec('PRAGMA busy_timeout = 5000;');
+            if (file_exists($dbPath)) {
+                @chmod($dbPath, 0666);
+            }
+        } catch (PDOException $e) {
+            if (defined('APP_DEBUG') && APP_DEBUG) {
+                die('خطای اتصال به SQLite: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8'));
+            }
+            error_log('SQLite connection error: ' . $e->getMessage());
+            die('خطا در اتصال به پایگاه داده SQLite. لطفاً مجوز نوشتن پوشه data را بررسی کنید.');
+        }
+    } else {
+        $host = defined('DB_HOST') ? DB_HOST : 'localhost';
+        $port = defined('DB_PORT') ? (int)DB_PORT : 3306;
+        $dbname = defined('DB_NAME') ? DB_NAME : '';
+        $user = defined('DB_USER') ? DB_USER : '';
+        $pass = defined('DB_PASS') ? DB_PASS : '';
+        $charset = defined('DB_CHARSET') ? DB_CHARSET : 'utf8mb4';
+
+        $dsn = "mysql:host={$host};port={$port};dbname={$dbname};charset={$charset}";
+
+        $options = [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+            PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES {$charset} COLLATE {$charset}_unicode_ci",
+        ];
+
+        try {
+            $pdo = new PDO($dsn, $user, $pass, $options);
+        } catch (PDOException $e) {
+            if (defined('APP_DEBUG') && APP_DEBUG) {
+                die('خطای اتصال به MySQL: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8'));
+            }
+            error_log('Database connection error: ' . $e->getMessage());
+            die('خطا در اتصال به دیتابیس MySQL. لطفاً مشخصات را در inc/config.php بررسی کنید.');
+        }
+    }
+
+    // ساخت و آماده‌سازی خودکار جداول و مدیر اولیه در صورت عدم وجود
+    ensure_database_schema($pdo, $driver);
+
+    return $pdo;
+}
+
+/**
+ * ایجاد خودکار ساختار جداول و داده‌های پیش‌فرض مسابقه بدون نیاز به نصب دستی
+ */
+function ensure_database_schema($pdo, $driver) {
+    static $initialized = false;
+    if ($initialized) {
+        return;
+    }
+    $initialized = true;
+
+    try {
+        if ($driver === 'sqlite') {
+            $pdo->exec('
+                CREATE TABLE IF NOT EXISTS admins (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username VARCHAR(50) NOT NULL UNIQUE,
+                    password_hash VARCHAR(255) NOT NULL,
+                    created_at DATETIME NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name VARCHAR(150) NOT NULL,
+                    positions_count TINYINT NOT NULL DEFAULT 4,
+                    show_result_to_scanner TINYINT NOT NULL DEFAULT 1,
+                    is_active TINYINT NOT NULL DEFAULT 1,
+                    logo_path VARCHAR(255) NULL,
+                    logo_tint_mode TINYINT NOT NULL DEFAULT 1,
+                    created_at DATETIME NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS colors (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id INT NOT NULL,
+                    name VARCHAR(50) NOT NULL,
+                    hex CHAR(7) NOT NULL,
+                    sort_order INT NOT NULL DEFAULT 0,
+                    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS color_points (
+                    color_id INT NOT NULL,
+                    rank TINYINT NOT NULL,
+                    points INT NOT NULL DEFAULT 0,
+                    PRIMARY KEY (color_id, rank),
+                    FOREIGN KEY (color_id) REFERENCES colors(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS teams (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id INT NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    UNIQUE (event_id, name),
+                    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS tags (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id INT NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    color_id INT NULL,
+                    code CHAR(22) NOT NULL UNIQUE,
+                    created_at DATETIME NOT NULL,
+                    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+                    FOREIGN KEY (color_id) REFERENCES colors(id) ON DELETE SET NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS claims (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tag_id INT NOT NULL,
+                    team_id INT NOT NULL,
+                    rank TINYINT NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    UNIQUE (tag_id, team_id),
+                    UNIQUE (tag_id, rank),
+                    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+                    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS rate_limits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    kind VARCHAR(20) NOT NULL,
+                    key_hash CHAR(64) NOT NULL,
+                    created_at DATETIME NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_rate_limits_kind_key ON rate_limits (kind, key_hash, created_at);
+            ');
+        } else {
+            $mySqlTables = [
+                "CREATE TABLE IF NOT EXISTS admins (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    username VARCHAR(50) NOT NULL UNIQUE,
+                    password_hash VARCHAR(255) NOT NULL,
+                    created_at DATETIME NOT NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS events (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(150) NOT NULL,
+                    positions_count TINYINT NOT NULL DEFAULT 4,
+                    show_result_to_scanner TINYINT NOT NULL DEFAULT 1,
+                    is_active TINYINT NOT NULL DEFAULT 1,
+                    logo_path VARCHAR(255) NULL,
+                    logo_tint_mode TINYINT NOT NULL DEFAULT 1,
+                    created_at DATETIME NOT NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS colors (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    event_id INT NOT NULL,
+                    name VARCHAR(50) NOT NULL,
+                    hex CHAR(7) NOT NULL,
+                    sort_order INT NOT NULL DEFAULT 0,
+                    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS color_points (
+                    color_id INT NOT NULL,
+                    rank TINYINT NOT NULL,
+                    points INT NOT NULL DEFAULT 0,
+                    PRIMARY KEY (color_id, rank),
+                    FOREIGN KEY (color_id) REFERENCES colors(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS teams (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    event_id INT NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    UNIQUE KEY unique_event_team (event_id, name),
+                    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS tags (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    event_id INT NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    color_id INT NULL,
+                    code CHAR(22) NOT NULL UNIQUE,
+                    created_at DATETIME NOT NULL,
+                    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+                    FOREIGN KEY (color_id) REFERENCES colors(id) ON DELETE SET NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS claims (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    tag_id INT NOT NULL,
+                    team_id INT NOT NULL,
+                    rank TINYINT NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    UNIQUE KEY unique_tag_team (tag_id, team_id),
+                    UNIQUE KEY unique_tag_rank (tag_id, rank),
+                    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+                    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS rate_limits (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    kind VARCHAR(20) NOT NULL,
+                    key_hash CHAR(64) NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    INDEX idx_rate_kind_key (kind, key_hash, created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+            ];
+
+            foreach ($mySqlTables as $tableSql) {
+                $pdo->exec($tableSql);
+            }
+        }
+
+        // بررسی و اضافه کردن خودکار ستون‌های لوگو در جدول events در دیتابیس‌های ساخته‌شده قبلی
+        try {
+            $existingColumns = [];
+            if ($driver === 'sqlite') {
+                $colsStmt = $pdo->query("PRAGMA table_info(events)");
+                foreach ($colsStmt->fetchAll() as $col) {
+                    $existingColumns[] = strtolower($col['name']);
+                }
+            } else {
+                $colsStmt = $pdo->query("SHOW COLUMNS FROM events");
+                foreach ($colsStmt->fetchAll() as $col) {
+                    $existingColumns[] = strtolower($col['Field']);
+                }
+            }
+            if (!in_array('logo_path', $existingColumns, true)) {
+                $pdo->exec("ALTER TABLE events ADD COLUMN logo_path VARCHAR(255) NULL");
+            }
+            if (!in_array('logo_tint_mode', $existingColumns, true)) {
+                $pdo->exec("ALTER TABLE events ADD COLUMN logo_tint_mode TINYINT NOT NULL DEFAULT 1");
+            }
+        } catch (Exception $e) {
+            // در صورت وجود ستون‌ها یا عدم نیاز نادیده گرفته می‌شود
+        }
+
+        // ۱. بررسی و ایجاد مدیر اولیه خودکار (در صورت عدم وجود)
+        $admCheck = $pdo->query('SELECT COUNT(*) as cnt FROM admins');
+        $adminCount = (int)$admCheck->fetch()['cnt'];
+
+        if ($adminCount === 0) {
+            $defaultUser = 'admin';
+            $defaultPass = 'admin1234';
+            $hash = password_hash($defaultPass, PASSWORD_DEFAULT);
+            $ins = $pdo->prepare('INSERT INTO admins (username, password_hash, created_at) VALUES (:u, :p, :c)');
+            $ins->execute([
+                'u' => $defaultUser,
+                'p' => $hash,
+                'c' => gmdate('Y-m-d H:i:s'),
+            ]);
+        }
+
+        // ۲. ایجاد یک رویداد نمونه کامل (در صورت خالی بودن رویدادها)
+        $evCheck = $pdo->query('SELECT COUNT(*) as cnt FROM events');
+        $eventCount = (int)$evCheck->fetch()['cnt'];
+
+        if ($eventCount === 0) {
+            $nowUtc = gmdate('Y-m-d H:i:s');
+            $insEv = $pdo->prepare('
+                INSERT INTO events (name, positions_count, show_result_to_scanner, is_active, created_at)
+                VALUES (:name, :pos, :show_res, :active, :created)
+            ');
+            $insEv->execute([
+                'name' => 'مسابقه رویداد NFC (پیش‌فرض)',
+                'pos' => 4,
+                'show_res' => 1,
+                'active' => 1,
+                'created' => $nowUtc,
+            ]);
+            $eventId = (int)$pdo->lastInsertId();
+
+            // افزودن رنگ‌های نمونه با امتیازات
+            $colorsData = [
+                ['name' => 'طلایی', 'hex' => '#f59e0b', 'points' => [1 => 100, 2 => 70, 3 => 50, 4 => 30]],
+                ['name' => 'نقره‌ای', 'hex' => '#94a3b8', 'points' => [1 => 80, 2 => 50, 3 => 30, 4 => 20]],
+                ['name' => 'قرمز', 'hex' => '#ef4444', 'points' => [1 => 60, 2 => 40, 3 => 20, 4 => 10]],
+                ['name' => 'آبی', 'hex' => '#3b82f6', 'points' => [1 => 50, 2 => 30, 3 => 15, 4 => 5]],
+            ];
+
+            $insCol = $pdo->prepare('INSERT INTO colors (event_id, name, hex, sort_order) VALUES (:eid, :name, :hex, :order)');
+            $insPt = $pdo->prepare('INSERT INTO color_points (color_id, rank, points) VALUES (:cid, :rank, :pts)');
+
+            $firstColorId = null;
+            $order = 1;
+            foreach ($colorsData as $c) {
+                $insCol->execute([
+                    'eid' => $eventId,
+                    'name' => $c['name'],
+                    'hex' => $c['hex'],
+                    'order' => $order++,
+                ]);
+                $cid = (int)$pdo->lastInsertId();
+                if ($firstColorId === null) {
+                    $firstColorId = $cid;
+                }
+                foreach ($c['points'] as $rnk => $pts) {
+                    $insPt->execute([
+                        'cid' => $cid,
+                        'rank' => $rnk,
+                        'pts' => $pts,
+                    ]);
+                }
+            }
+
+            // افزودن ۴ تیم اولیه
+            $teamsList = ['تیم شاهین', 'تیم عقاب', 'تیم سیمرغ', 'تیم دماوند'];
+            $insTm = $pdo->prepare('INSERT INTO teams (event_id, name) VALUES (:eid, :name)');
+            foreach ($teamsList as $tName) {
+                $insTm->execute(['eid' => $eventId, 'name' => $tName]);
+            }
+
+            // افزودن ۳ تگ آماده با کدهای تصادفی ۲۲ کاراکتری
+            $insTag = $pdo->prepare('INSERT INTO tags (event_id, name, color_id, code, created_at) VALUES (:eid, :name, :cid, :code, :created)');
+            for ($i = 1; $i <= 3; $i++) {
+                $code = rtrim(strtr(base64_encode(random_bytes(16)), '+/', '-_'), '=');
+                $insTag->execute([
+                    'eid' => $eventId,
+                    'name' => "تگ شماره {$i}",
+                    'cid' => $firstColorId,
+                    'code' => $code,
+                    'created' => $nowUtc,
+                ]);
+            }
+        }
+    } catch (Exception $e) {
+        error_log('Database auto-initialization error: ' . $e->getMessage());
+    }
+}

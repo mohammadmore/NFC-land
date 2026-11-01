@@ -1,0 +1,56 @@
+# ==============================================================================
+# NFC Event Tag Scoring - Apache Configuration (cPanel & LiteSpeed Optimized)
+# ==============================================================================
+
+# ۱. تعیین صریح فایل پیش‌فرض برای جلوگیری از ارور ۴۰۳ در مسیر دایرکتوری /map/
+DirectoryIndex index.php
+
+# ۲. جلوگیری از فهرست شدن فایل‌ها بدون ایجاد تداخل با دسترسی‌ها
+<IfModule mod_autoindex.c>
+    Options -Indexes
+</IfModule>
+
+# ۳. هدرهای امنیتی
+<IfModule mod_headers.c>
+    Header always set X-Robots-Tag "noindex, nofollow"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "no-referrer"
+    Header always set X-Frame-Options "DENY"
+</IfModule>
+
+# ۴. کاراکترست پیش‌فرض و پشتیبانی از فونت وب WOFF2
+AddDefaultCharset UTF-8
+<IfModule mod_mime.c>
+    AddType font/woff2 .woff2
+</IfModule>
+
+# ۵. محافظت از فایل‌های حساس
+<FilesMatch "^(config\.php|\.env|\.git|composer\.|package\.|README\.md)">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# ۶. بازنویسی مسیرها (URL Rewriting)
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /map/
+
+    # دسترسی مستقیم به استایل‌ها و اسکریپت‌های assets
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^assets/ - [L]
+
+    # مسدودسازی دسترسی مستقیم مرورگر به پوشه‌های inc و views
+    RewriteRule ^(inc|views)/ - [F,L]
+
+    # اگر فایل واقعی درخواست شده باشد (مانند setup.php)، مستقیماً سرو شود
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^ - [L]
+
+    # تمام درخواست‌های دیگر (از جمله خود مسیر /map/) به index.php فرستاده شوند
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
