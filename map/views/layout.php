@@ -25,7 +25,7 @@ $isPublicView = !empty($body_class) && (strpos($body_class, 'is-scan-view') !== 
     <header class="app-header">
         <div class="header-container">
             <div class="header-brand">
-                <a href="<?= e(path_url('/admin/events')) ?>" class="brand-link">
+                <a href="<?= e($isLoggedIn && function_exists('staff_home_url') ? staff_home_url() : path_url('/admin/login')) ?>" class="brand-link">
                     <span class="brand-icon">🏷️</span>
                     <span class="brand-text">امتیازدهی تگ‌های NFC</span>
                 </a>
@@ -33,7 +33,11 @@ $isPublicView = !empty($body_class) && (strpos($body_class, 'is-scan-view') !== 
 
             <?php if ($isLoggedIn): ?>
             <nav class="header-nav">
-                <a href="<?= e(path_url('/admin/events')) ?>" class="nav-link <?= (isset($active_nav) && $active_nav === 'events') ? 'active' : '' ?>">رویدادها</a>
+                <?php if (function_exists('is_admin_role') && is_admin_role()): ?>
+                    <a href="<?= e(path_url('/admin/events')) ?>" class="nav-link <?= (isset($active_nav) && $active_nav === 'events') ? 'active' : '' ?>">رویدادها</a>
+                    <a href="<?= e(path_url('/admin/users')) ?>" class="nav-link <?= (isset($active_nav) && $active_nav === 'users') ? 'active' : '' ?>">کاربران</a>
+                <?php endif; ?>
+                <a href="<?= e(path_url('/admin/field')) ?>" class="nav-link <?= (isset($active_nav) && $active_nav === 'field') ? 'active' : '' ?>">کار میدانی</a>
                 <a href="<?= e(path_url('/admin/password')) ?>" class="nav-link <?= (isset($active_nav) && $active_nav === 'password') ? 'active' : '' ?>">تغییر رمز</a>
                 <a href="<?= e(path_url('/admin/logout')) ?>" class="nav-link logout-link">خروج (<?= e($adminUser) ?>)</a>
             </nav>

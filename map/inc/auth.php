@@ -74,6 +74,85 @@ function is_admin_logged_in() {
 }
 
 /**
+ * نقش‌های کاربری سامانه
+ * admin: دسترسی کامل | placer: نصاب (فقط نصب، تأیید و جمع‌آوری تگ‌ها؛ بدون دسترسی به امتیازها و تنظیمات)
+ */
+function staff_roles() {
+    return [
+        'admin' => 'مدیر',
+        'placer' => 'نصاب',
+    ];
+}
+
+/**
+ * کاربر لاگین‌شده فعلی (با بررسی زنده فعال بودن حساب و نقش از پایگاه‌داده در هر درخواست)
+ *
+ * اگر حساب در این فاصله غیرفعال یا حذف شده باشد، کاربر فوراً از سامانه خارج می‌شود.
+ *
+ * @return array|null
+ */
+function current_user($pdo) {
+    static $cached = false;
+    if ($cached !== false) {
+        return $cached;
+    }
+    if (!is_admin_logged_in()) {
+        $cached = null;
+        return null;
+    }
+    $stmt = $pdo->prepare('SELECT id, username, display_name, role, is_active FROM admins WHERE id = :id LIMIT 1');
+    $stmt->execute(['id' => (int)$_SESSION['admin_id']]);
+    $user = $stmt->fetch();
+    $stmt->closeCursor();
+
+    if (!$user || (int)$user['is_active'] !== 1) {
+        admin_logout();
+        init_session();
+        flash_set('auth_error', 'حساب کاربری شما غیرفعال شده است.', 'error');
+        header('Location: ' . path_url('/admin/login'));
+        exit;
+    }
+    if (!array_key_exists($user['role'], staff_roles())) {
+        $user['role'] = 'placer';
+    }
+    $_SESSION['admin_role'] = $user['role'];
+    $_SESSION['admin_username'] = $user['display_name'] ?: $user['username'];
+    $cached = $user;
+    return $user;
+}
+
+/**
+ * آیا کاربر فعلی نقش «مدیر» دارد؟ (بر اساس نقشی که current_user در همین درخواست تازه کرده است)
+ */
+function is_admin_role() {
+    return is_admin_logged_in() && isset($_SESSION['admin_role']) && $_SESSION['admin_role'] === 'admin';
+}
+
+/**
+ * صفحه شروع هر نقش پس از ورود
+ */
+function staff_home_url() {
+    return is_admin_role() ? path_url('/admin/events') : path_url('/admin/field');
+}
+
+/**
+ * محافظت از مسیرهای مشترک کادر برگزاری (مدیر و نصاب)
+ */
+function require_staff($pdo, $allowPendingPasswordChange = false) {
+    if (!is_admin_logged_in()) {
+        header('Location: ' . path_url('/admin/login'));
+        exit;
+    }
+    $user = current_user($pdo);
+    if (!$allowPendingPasswordChange && admin_must_change_password()) {
+        flash_set('warning', 'برای امنیت سامانه، ابتدا رمز عبور خود را تغییر دهید.', 'warning');
+        header('Location: ' . path_url('/admin/password'));
+        exit;
+    }
+    return $user;
+}
+
+/**
  * محافظت از مسیرهای ادمین
  */
 function require_admin($allowPendingPasswordChange = false) {
@@ -85,6 +164,12 @@ function require_admin($allowPendingPasswordChange = false) {
     if (!$allowPendingPasswordChange && admin_must_change_password()) {
         flash_set('warning', 'برای امنیت سامانه، ابتدا رمز عبور پیش‌فرض را تغییر دهید.', 'warning');
         header('Location: ' . path_url('/admin/password'));
+        exit;
+    }
+    // نصاب‌ها به بخش‌های مدیریتی (امتیازها، تنظیمات، کاربران) دسترسی ندارند
+    if (!is_admin_role()) {
+        flash_set('warning', 'این بخش فقط برای مدیران در دسترس است.', 'warning');
+        header('Location: ' . path_url('/admin/field'));
         exit;
     }
 }
@@ -117,17 +202,25 @@ function admin_login($pdo, $username, $password) {
         ];
     }
 
-    $stmt = $pdo->prepare('SELECT id, username, password_hash, must_change_password FROM admins WHERE username = :username LIMIT 1');
+    $stmt = $pdo->prepare('SELECT id, username, display_name, role, is_active, password_hash, must_change_password FROM admins WHERE username = :username LIMIT 1');
     $stmt->execute(['username' => trim($username)]);
     $admin = $stmt->fetch();
     $stmt->closeCursor();
+
+    if ($admin && password_verify($password, $admin['password_hash']) && (int)$admin['is_active'] !== 1) {
+        return [
+            'success' => false,
+            'message' => 'حساب کاربری شما غیرفعال است. با مدیر رویداد تماس بگیرید.',
+        ];
+    }
 
     if ($admin && password_verify($password, $admin['password_hash'])) {
         // احراز هویت موفق: بازسازی شناسه نشست
         session_regenerate_id(true);
         $_SESSION['admin_logged_in'] = true;
         $_SESSION['admin_id'] = (int)$admin['id'];
-        $_SESSION['admin_username'] = $admin['username'];
+        $_SESSION['admin_username'] = $admin['display_name'] ?: $admin['username'];
+        $_SESSION['admin_role'] = array_key_exists($admin['role'], staff_roles()) ? $admin['role'] : 'placer';
         $_SESSION['admin_last_activity'] = time();
         // اجبار به تغییر رمز پیش‌فرض یا رمزی که مدیر سامانه تعیین کرده باشد
         $_SESSION['admin_must_change_password'] = ((int)$admin['must_change_password'] === 1 || $password === 'admin1234');

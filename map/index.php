@@ -111,6 +111,7 @@ require_once __DIR__ . '/inc/scan.php';
 require_once __DIR__ . '/inc/admin.php';
 require_once __DIR__ . '/inc/export.php';
 require_once __DIR__ . '/inc/quotes.php';
+require_once __DIR__ . '/inc/users.php';
 
 // ارسال هدرهای امنیتی برای تمام پاسخ‌ها
 send_security_headers();
@@ -179,7 +180,8 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
     // ۱. صفحه ورود (/admin/login)
     if ($adminPath === 'login') {
         if (is_admin_logged_in()) {
-            header('Location: ' . path_url('/admin/events'));
+            current_user($pdo);
+            header('Location: ' . staff_home_url());
             exit;
         }
 
@@ -190,7 +192,7 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
             $password = isset($_POST['password']) ? $_POST['password'] : '';
             $loginRes = admin_login($pdo, $username, $password);
             if ($loginRes['success']) {
-                header('Location: ' . path_url('/admin/events'));
+                header('Location: ' . staff_home_url());
                 exit;
             } else {
                 $loginError = $loginRes['message'];
@@ -212,13 +214,13 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
         exit;
     }
 
-    // از اینجا به بعد تمام بخش‌های ادمین نیازمند لاگین هستند
+    // از اینجا به بعد تمام بخش‌ها نیازمند لاگین کادر برگزاری (مدیر یا نصاب) هستند
     // (صفحه تغییر رمز حتی در حالت «تغییر رمز اجباری» قابل دسترسی است)
-    require_admin($adminPath === 'password');
+    $me = require_staff($pdo, $adminPath === 'password');
 
-    // ریدایرکت /admin به /admin/events
+    // ریدایرکت /admin به صفحه شروع نقش کاربر
     if ($adminPath === '') {
-        header('Location: ' . path_url('/admin/events'));
+        header('Location: ' . staff_home_url());
         exit;
     }
 
@@ -237,7 +239,7 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
                 $res = admin_change_password($pdo, $_SESSION['admin_id'], $current, $new);
                 if ($res['success']) {
                     flash_set('success', $res['message'], 'success');
-                    header('Location: ' . path_url('/admin/events'));
+                    header('Location: ' . staff_home_url());
                     exit;
                 } else {
                     $pwdError = $res['message'];
@@ -246,9 +248,29 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
         }
 
         render_view('admin_password', [
-            'page_title' => 'تغییر رمز عبور ادمین',
+            'page_title' => 'تغییر رمز عبور',
             'pwd_error' => $pwdError,
         ]);
+        exit;
+    }
+
+    // مسیرهای میدانی مشترک مدیر و نصاب (نصب، تأیید، جمع‌آوری)
+    if (function_exists('handle_field_routes') && handle_field_routes($pdo, $adminPath, $me)) {
+        exit;
+    }
+    if ($adminPath === 'field') {
+        render_view('field_home', [
+            'page_title' => 'کار میدانی',
+            'me' => $me,
+        ]);
+        exit;
+    }
+
+    // از اینجا به بعد فقط مدیران دسترسی دارند
+    require_admin();
+
+    // مدیریت کاربران و نصاب‌ها (/admin/users)
+    if (handle_user_routes($pdo, $adminPath, $me)) {
         exit;
     }
 

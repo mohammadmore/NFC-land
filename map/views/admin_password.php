@@ -10,7 +10,7 @@ $active_nav = 'password';
 
 <div class="page-header">
     <div class="page-title-group">
-        <h1 class="page-title">تغییر رمز عبور ادمین</h1>
+        <h1 class="page-title">تغییر رمز عبور</h1>
         <p class="page-subtitle">تعیین رمز عبور جدید برای ورود به پنل مدیریت</p>
     </div>
 </div>

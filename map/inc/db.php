@@ -297,6 +297,9 @@ function ensure_database_schema($pdo, $driver) {
             ],
             'admins' => [
                 'must_change_password' => 'TINYINT NOT NULL DEFAULT 0',
+                'role' => "VARCHAR(20) NOT NULL DEFAULT 'admin'",
+                'display_name' => 'VARCHAR(100) NULL',
+                'is_active' => 'TINYINT NOT NULL DEFAULT 1',
             ],
         ];
         foreach ($migrations as $table => $columns) {
