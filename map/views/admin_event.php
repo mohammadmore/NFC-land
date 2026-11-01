@@ -71,7 +71,7 @@ $positionsCount = (int)$event['positions_count'];
                         <button type="button" id="btnManualRefresh" class="btn btn-sm btn-primary">
                             🔄 به‌روزرسانی
                         </button>
-                        <form method="POST" action="<?= e(path_url('/admin/events/' . $event['id'] . '/reset-claims')) ?>" class="inline-form" onsubmit="return confirm('⚠️ آیا از پاکسازی و حذف تمام ثبت‌های این مسابقه اطمینان دارید؟ تمام امتیازات صفر خواهند شد (مناسب برای بعد از تست‌های اولیه).');">
+                        <form method="POST" action="<?= e(path_url('/admin/events/' . $event['id'] . '/reset-claims')) ?>" class="inline-form" onsubmit="return confirm('⚠️ آیا از پاکسازی و حذف تمام ثبت‌های این مسابقه اطمینان دارید؟ تمام امتیازات صفر و قفل گوشی‌ها آزاد خواهند شد (مناسب برای بعد از تست‌های اولیه).');">
                             <?= csrf_field() ?>
                             <button type="submit" class="btn btn-sm btn-danger" title="صفر کردن تمام امتیازات">
                                 🗑️ پاکسازی ثبت‌ها
@@ -333,7 +333,16 @@ $positionsCount = (int)$event['positions_count'];
 
             <!-- جدول تیم‌ها -->
             <div class="card">
-                <div class="card-header"><h3 class="card-title">لیست تیم‌های این رویداد (<?= fa_num(count($teams)) ?> تیم)</h3></div>
+                <div class="card-header d-flex-between">
+                    <div>
+                        <h3 class="card-title">لیست تیم‌های این رویداد (<?= fa_num(count($teams)) ?> تیم)</h3>
+                        <small class="text-muted">قفل گوشی روی تیم: <?= (!empty($event['lock_device_team']) && (int)$event['lock_device_team'] === 1) ? 'فعال' : 'غیرفعال (قابل فعال‌سازی از تب تنظیمات)' ?></small>
+                    </div>
+                    <form method="POST" action="<?= e(path_url('/admin/events/' . $event['id'] . '/devices/reset')) ?>" class="inline-form" onsubmit="return confirm('قفل تمام گوشی‌های این رویداد آزاد شود؟');">
+                        <?= csrf_field() ?>
+                        <button type="submit" class="btn btn-sm btn-secondary">🔓 آزادسازی همه گوشی‌ها</button>
+                    </form>
+                </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table">
@@ -342,12 +351,13 @@ $positionsCount = (int)$event['positions_count'];
                                     <th>شناسه</th>
                                     <th>نام تیم</th>
                                     <th>تعداد ثبت‌ها</th>
+                                    <th>گوشی‌های قفل‌شده</th>
                                     <th>عملیات</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (empty($teams)): ?>
-                                    <tr><td colspan="4" class="text-center text-muted p-4">هنوز تیمی تعریف نشده است.</td></tr>
+                                    <tr><td colspan="5" class="text-center text-muted p-4">هنوز تیمی تعریف نشده است.</td></tr>
                                 <?php else: ?>
                                     <?php foreach ($teams as $tm): ?>
                                         <tr>
@@ -360,6 +370,15 @@ $positionsCount = (int)$event['positions_count'];
                                                 </form>
                                             </td>
                                             <td><?= fa_num($tm['claims_count']) ?> ثبت</td>
+                                            <td>
+                                                <?= fa_num($tm['devices_count']) ?> گوشی
+                                                <?php if ((int)$tm['devices_count'] > 0): ?>
+                                                    <form method="POST" action="<?= e(path_url('/admin/events/' . $event['id'] . '/teams/' . $tm['id'] . '/reset-devices')) ?>" class="inline-form" onsubmit="return confirm('گوشی‌های این تیم آزاد شوند تا بتوانند برای هر تیمی ثبت کنند؟');">
+                                                        <?= csrf_field() ?>
+                                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="آزادسازی قفل گوشی‌ها">🔓 آزادسازی</button>
+                                                    </form>
+                                                <?php endif; ?>
+                                            </td>
                                             <td>
                                                 <form method="POST" action="<?= e(path_url('/admin/events/' . $event['id'] . '/teams/' . $tm['id'] . '/delete')) ?>" class="inline-form" onsubmit="return confirm('<?= ((int)$tm['claims_count'] > 0) ? 'هشدار: این تیم ثبت‌هایی دارد. با حذف تیم، تمام ثبت‌های آن پاک شده و رتبه تگ‌ها بازشماری می‌شود. ادامه می‌دهید؟' : 'آیا از حذف این تیم اطمینان دارید؟' ?>');">
                                                     <?= csrf_field() ?>
@@ -559,6 +578,14 @@ $positionsCount = (int)$event['positions_count'];
                                 نمایش عمومی لیدربورد (صفحه جدول رده‌بندی زنده برای شرکت‌کنندگان و نمایش روی پروژکتور، همراه با لینک آن در صفحه اسکن تگ‌ها)
                             </label>
                             <small class="text-muted d-block">در صورت خاموش بودن، جدول رده‌بندی فقط در پنل مدیریت دیده می‌شود.</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="custom-control-label">
+                                <input type="checkbox" name="lock_device_team" value="1" <?= (!empty($event['lock_device_team']) && (int)$event['lock_device_team'] === 1) ? 'checked' : '' ?> class="custom-checkbox">
+                                قفل گوشی روی تیم (هر گوشی پس از اولین ثبت، فقط برای همان تیم می‌تواند ثبت کند)
+                            </label>
+                            <small class="text-muted d-block">جلوی ثبت تگ به نام تیم‌های دیگر برای پر کردن ظرفیت تگ را می‌گیرد. در صورت اشتباه، از تب تیم‌ها می‌توانید قفل گوشی‌ها را آزاد کنید. «پاکسازی ثبت‌ها» قفل گوشی‌ها را هم آزاد می‌کند.</small>
                         </div>
 
                         <div class="form-actions mt-4">

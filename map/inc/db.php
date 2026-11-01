@@ -116,6 +116,7 @@ function ensure_database_schema($pdo, $driver) {
                     logo_tint_mode TINYINT NOT NULL DEFAULT 1,
                     public_board TINYINT NOT NULL DEFAULT 0,
                     board_token VARCHAR(32) NULL,
+                    lock_device_team TINYINT NOT NULL DEFAULT 0,
                     created_at DATETIME NOT NULL
                 );
 
@@ -174,6 +175,18 @@ function ensure_database_schema($pdo, $driver) {
                     created_at DATETIME NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_rate_limits_kind_key ON rate_limits (kind, key_hash, created_at);
+
+                CREATE TABLE IF NOT EXISTS device_locks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id INT NOT NULL,
+                    device_hash CHAR(64) NOT NULL,
+                    team_id INT NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    UNIQUE (event_id, device_hash),
+                    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+                    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_device_locks_team ON device_locks (team_id);
             ');
         } else {
             $mySqlTables = [
@@ -195,6 +208,7 @@ function ensure_database_schema($pdo, $driver) {
                     logo_tint_mode TINYINT NOT NULL DEFAULT 1,
                     public_board TINYINT NOT NULL DEFAULT 0,
                     board_token VARCHAR(32) NULL,
+                    lock_device_team TINYINT NOT NULL DEFAULT 0,
                     created_at DATETIME NOT NULL
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
 
@@ -252,6 +266,18 @@ function ensure_database_schema($pdo, $driver) {
                     key_hash CHAR(64) NOT NULL,
                     created_at DATETIME NOT NULL,
                     INDEX idx_rate_kind_key (kind, key_hash, created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS device_locks (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    event_id INT NOT NULL,
+                    device_hash CHAR(64) NOT NULL,
+                    team_id INT NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    UNIQUE KEY unique_event_device (event_id, device_hash),
+                    INDEX idx_device_locks_team (team_id),
+                    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+                    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             ];
 
@@ -267,6 +293,7 @@ function ensure_database_schema($pdo, $driver) {
                 'logo_tint_mode' => 'TINYINT NOT NULL DEFAULT 1',
                 'public_board' => 'TINYINT NOT NULL DEFAULT 0',
                 'board_token' => 'VARCHAR(32) NULL',
+                'lock_device_team' => 'TINYINT NOT NULL DEFAULT 0',
             ],
             'admins' => [
                 'must_change_password' => 'TINYINT NOT NULL DEFAULT 0',

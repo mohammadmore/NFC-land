@@ -352,7 +352,9 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
             require_csrf();
             $resetStmt = $pdo->prepare('DELETE FROM claims WHERE tag_id IN (SELECT id FROM tags WHERE event_id = :eid)');
             $resetStmt->execute(['eid' => $eventId]);
-            flash_set('success', 'تمامی ثبت‌های آزمایشی این رویداد با موفقیت پاکسازی شدند و جدول امتیازات صفر گردید.', 'success');
+            // قفل گوشی‌های تست‌کننده هم آزاد می‌شود تا در مسابقه واقعی مشکلی ایجاد نکند
+            $pdo->prepare('DELETE FROM device_locks WHERE event_id = :eid')->execute(['eid' => $eventId]);
+            flash_set('success', 'تمامی ثبت‌های آزمایشی این رویداد و قفل گوشی‌ها با موفقیت پاکسازی شدند و جدول امتیازات صفر گردید.', 'success');
             header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=leaderboard'));
             exit;
         }
@@ -368,6 +370,7 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
             $isActive = !empty($_POST['is_active']) ? 1 : 0;
             $logoTintMode = !empty($_POST['logo_tint_mode']) ? 1 : 0;
             $publicBoard = !empty($_POST['public_board']) ? 1 : 0;
+            $lockDeviceTeam = !empty($_POST['lock_device_team']) ? 1 : 0;
 
             if ($name === '') {
                 flash_set('error', 'نام رویداد نمی‌تواند خالی باشد.', 'error');
@@ -411,7 +414,8 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
             $upStmt = $pdo->prepare('
                 UPDATE events 
                 SET name = :name, positions_count = :positions, show_result_to_scanner = :show_res, is_active = :active,
-                    logo_path = :logo_path, logo_tint_mode = :tint_mode, public_board = :public_board, board_token = :board_token
+                    logo_path = :logo_path, logo_tint_mode = :tint_mode, public_board = :public_board, board_token = :board_token,
+                    lock_device_team = :lock_device
                 WHERE id = :id
             ');
             $upStmt->execute([
@@ -423,6 +427,7 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
                 'tint_mode' => $logoTintMode,
                 'public_board' => $publicBoard,
                 'board_token' => $boardToken,
+                'lock_device' => $lockDeviceTeam,
                 'id' => $eventId,
             ]);
 
@@ -643,6 +648,26 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
             exit;
         }
 
+        // ۶.۱۰.۱. آزادسازی گوشی‌های قفل‌شده روی یک تیم (مثلاً اگر گوشی اشتباهی برای تیم دیگری ثبت کرده باشد)
+        if (preg_match('#^teams/(\d+)/reset-devices$#', $subAction, $tMatch) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+            require_csrf();
+            $rd = $pdo->prepare('DELETE FROM device_locks WHERE team_id = :tid AND event_id = :eid');
+            $rd->execute(['tid' => (int)$tMatch[1], 'eid' => $eventId]);
+            flash_set('success', fa_num($rd->rowCount()) . ' گوشی از قفل این تیم آزاد شد.', 'success');
+            header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=teams'));
+            exit;
+        }
+
+        // ۶.۱۰.۲. آزادسازی قفل تمام گوشی‌های رویداد
+        if ($subAction === 'devices/reset' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+            require_csrf();
+            $rd = $pdo->prepare('DELETE FROM device_locks WHERE event_id = :eid');
+            $rd->execute(['eid' => $eventId]);
+            flash_set('success', 'قفل ' . fa_num($rd->rowCount()) . ' گوشی آزاد شد.', 'success');
+            header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=teams'));
+            exit;
+        }
+
         // ۶.۱۱. درخواست AJAX جزئیات ثبت‌های یک تیم
         if (preg_match('#^teams/(\d+)/claims-json$#', $subAction, $tMatch)) {
             $teamId = (int)$tMatch[1];
@@ -817,7 +842,9 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
 
         // واکشی تیم‌ها
         $tmStmt = $pdo->prepare('
-            SELECT tm.*, (SELECT COUNT(*) FROM claims WHERE team_id = tm.id) as claims_count
+            SELECT tm.*,
+                (SELECT COUNT(*) FROM claims WHERE team_id = tm.id) as claims_count,
+                (SELECT COUNT(*) FROM device_locks WHERE team_id = tm.id) as devices_count
             FROM teams tm 
             WHERE tm.event_id = :eid 
             ORDER BY tm.name ASC

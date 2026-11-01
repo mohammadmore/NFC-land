@@ -455,3 +455,65 @@ function valid_event_color_id($pdo, $eventId, $colorId) {
 function generate_board_token() {
     return base64url_encode(random_bytes(16));
 }
+
+/**
+ * شناسه ماندگار دستگاه (گوشی) برای قابلیت «قفل گوشی روی تیم»
+ *
+ * در کوکی HttpOnly با عمر ۱۸۰ روز نگهداری می‌شود. اگر $createIfMissing فعال باشد
+ * و کوکی وجود نداشته باشد، شناسه جدید ساخته و کوکی تنظیم می‌شود.
+ *
+ * @return string|null
+ */
+function get_device_id($createIfMissing = false) {
+    $name = 'nfc_device';
+    if (isset($_COOKIE[$name]) && is_string($_COOKIE[$name]) && preg_match('/^[A-Za-z0-9_-]{22}$/', $_COOKIE[$name])) {
+        return $_COOKIE[$name];
+    }
+    if (!$createIfMissing) {
+        return null;
+    }
+    $id = base64url_encode(random_bytes(16));
+    $path = defined('BASE_PATH') && BASE_PATH !== '' ? BASE_PATH : '/';
+    if (PHP_VERSION_ID >= 70300) {
+        setcookie($name, $id, [
+            'expires' => time() + 180 * 86400,
+            'path' => $path,
+            'secure' => is_ssl(),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+    } else {
+        setcookie($name, $id, time() + 180 * 86400, $path . '; samesite=Lax', '', is_ssl(), true);
+    }
+    $_COOKIE[$name] = $id;
+    return $id;
+}
+
+/**
+ * هش شناسه دستگاه برای ذخیره در پایگاه‌داده (شناسه خام ذخیره نمی‌شود)
+ */
+function device_hash($deviceId) {
+    return hash('sha256', 'nfc-device|' . (string)$deviceId);
+}
+
+/**
+ * تیمی که این دستگاه در رویداد به آن قفل شده است (یا null)
+ *
+ * @return array|null ['team_id' => int, 'team_name' => string]
+ */
+function get_device_lock($pdo, $eventId, $deviceId) {
+    if (empty($deviceId)) {
+        return null;
+    }
+    $stmt = $pdo->prepare('
+        SELECT dl.team_id, tm.name AS team_name
+        FROM device_locks dl
+        INNER JOIN teams tm ON tm.id = dl.team_id
+        WHERE dl.event_id = :eid AND dl.device_hash = :h
+        LIMIT 1
+    ');
+    $stmt->execute(['eid' => (int)$eventId, 'h' => device_hash($deviceId)]);
+    $row = $stmt->fetch();
+    $stmt->closeCursor();
+    return $row ?: null;
+}

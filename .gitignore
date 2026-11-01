@@ -1,11 +1,7 @@
 node_modules/
-build/
-dist/
-coverage/
 .DS_Store
 *.log
 .env*
-!.env.example
 
 # NFC map runtime data (never commit: contains tag codes and admin hashes)
 map/data/*

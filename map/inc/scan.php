@@ -46,7 +46,8 @@ function handle_scan_request($pdo, $code) {
             e.logo_path,
             e.logo_tint_mode,
             e.public_board,
-            e.board_token
+            e.board_token,
+            e.lock_device_team
         FROM tags t
         INNER JOIN events e ON e.id = t.event_id
         LEFT JOIN colors c ON c.id = t.color_id
@@ -112,6 +113,12 @@ function handle_scan_request($pdo, $code) {
     $teamsStmt->execute(['event_id' => $tag['event_id']]);
     $teams = $teamsStmt->fetchAll();
 
+    // قفل گوشی روی تیم: اگر این گوشی قبلاً برای تیمی ثبت کرده، فقط همان تیم قابل انتخاب است
+    $lockedTeam = null;
+    if ((int)$tag['lock_device_team'] === 1) {
+        $lockedTeam = get_device_lock($pdo, $tag['event_id'], get_device_id(true));
+    }
+
     render_view('scan', [
         'page_title' => 'اسکن تگ - ' . e($tag['tag_name']),
         'tag' => $tag,
@@ -124,6 +131,8 @@ function handle_scan_request($pdo, $code) {
         'can_claim' => (!$isFull),
         'flash_status' => $flashStatus,
         'board_url' => $boardUrl,
+        'locked_team' => $lockedTeam,
+        'device_lock_enabled' => ((int)$tag['lock_device_team'] === 1),
     ]);
     exit;
 }
@@ -181,6 +190,21 @@ function handle_claim_submission($pdo, $tag) {
         exit;
     }
 
+    // قفل گوشی روی تیم: شناسه دستگاه باید از قبل (هنگام باز شدن صفحه اسکن) در کوکی تنظیم شده باشد
+    $deviceLockOn = ((int)$tag['lock_device_team'] === 1);
+    $deviceId = null;
+    if ($deviceLockOn) {
+        $deviceId = get_device_id(false);
+        if ($deviceId === null) {
+            flash_set('scan_status', [
+                'type' => 'error',
+                'message' => 'برای ثبت، کوکی‌های مرورگر باید فعال باشد. لطفاً صفحه را دوباره باز کنید (از حالت ناشناس/Incognito استفاده نکنید).',
+            ]);
+            header('Location: ' . path_url('/' . $code));
+            exit;
+        }
+    }
+
     // شروع تراکنش اتمیک
     try {
         $pdo->beginTransaction();
@@ -192,6 +216,26 @@ function handle_claim_submission($pdo, $tag) {
             show_404();
         }
         $colorId = $lockedTag['color_id'];
+
+        // ۱.۱. قفل گوشی روی تیم: ثبت قفل (در اولین ثبت) و رد ثبت برای تیم دیگر
+        if ($deviceLockOn) {
+            $dHash = device_hash($deviceId);
+            $insLock = db_is_mysql($pdo)
+                ? $pdo->prepare('INSERT IGNORE INTO device_locks (event_id, device_hash, team_id, created_at) VALUES (:eid, :h, :tid, :c)')
+                : $pdo->prepare('INSERT OR IGNORE INTO device_locks (event_id, device_hash, team_id, created_at) VALUES (:eid, :h, :tid, :c)');
+            $insLock->execute(['eid' => $eventId, 'h' => $dHash, 'tid' => $teamId, 'c' => gmdate('Y-m-d H:i:s')]);
+
+            $lock = get_device_lock($pdo, $eventId, $deviceId);
+            if ($lock && (int)$lock['team_id'] !== $teamId) {
+                $pdo->rollBack();
+                flash_set('scan_status', [
+                    'type' => 'error',
+                    'message' => 'این گوشی قبلاً برای تیم «' . $lock['team_name'] . '» ثبت کرده و فقط برای همان تیم می‌تواند ثبت کند. در صورت اشتباه به برگزارکننده مراجعه کنید.',
+                ]);
+                header('Location: ' . path_url('/' . $code));
+                exit;
+            }
+        }
 
         // ۲. شمارش ثبت‌های قبلی تگ
         $cntStmt = $pdo->prepare('SELECT COUNT(*) as cnt FROM claims WHERE tag_id = :tag_id');

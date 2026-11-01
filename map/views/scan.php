@@ -138,6 +138,18 @@ $body_class = 'is-scan-view';
                         <form id="claimForm" method="POST" action="<?= e(path_url('/' . $tag['code'])) ?>" class="claim-form">
                             <?= csrf_field() ?>
 
+                            <?php if (!empty($locked_team)): ?>
+                            <div class="form-group mb-4">
+                                <input type="hidden" name="team_id" id="lockedTeamId" value="<?= (int)$locked_team['team_id'] ?>" data-team-name="<?= e($locked_team['team_name']) ?>">
+                                <div class="status-box status-info glass-status-box">
+                                    <div class="status-icon">🔒</div>
+                                    <div class="status-text">این گوشی برای تیم <strong><?= e($locked_team['team_name']) ?></strong> ثبت شده است.</div>
+                                </div>
+                            </div>
+                            <?php else: ?>
+                            <?php if (!empty($device_lock_enabled)): ?>
+                                <p class="claim-instruction" style="font-size: 0.85rem; opacity: 0.85;">⚠️ توجه: این گوشی پس از اولین ثبت، فقط برای همان تیم می‌تواند ثبت کند.</p>
+                            <?php endif; ?>
                             <div class="form-group mb-4">
                                 <label for="teamSelect" class="form-label d-flex-between">
                                     <span>انتخاب تیم:</span>
@@ -155,6 +167,7 @@ $body_class = 'is-scan-view';
                                     ⚠️ لطفاً ابتدا نام تیم خود را از لیست بالا انتخاب کنید.
                                 </div>
                             </div>
+                            <?php endif; ?>
 
                             <div class="form-actions">
                                 <button type="button" id="btnSubmitClaim" class="btn btn-tag-gradient btn-block btn-lg">

@@ -24,6 +24,8 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     let isSubmitting = false;
+    // در حالت «قفل گوشی روی تیم»، تیم از قبل مشخص است و منوی انتخاب تیم نمایش داده نمی‌شود
+    const lockedTeamInput = document.getElementById('lockedTeamId');
 
     // توابع کمکی باز و بسته کردن پاپ‌آپ تایید
     function openConfirmPopup(teamName) {
@@ -62,6 +64,11 @@ document.addEventListener('DOMContentLoaded', function () {
     // لمس دکمه ثبت فرم
     btnSubmitClaim.addEventListener('click', function (e) {
         e.preventDefault();
+
+        if (lockedTeamInput) {
+            openConfirmPopup(lockedTeamInput.getAttribute('data-team-name') || '');
+            return;
+        }
 
         const selectedVal = teamSelect ? teamSelect.value.trim() : '';
         if (!selectedVal || selectedVal === '' || selectedVal === '0') {
