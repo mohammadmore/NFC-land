@@ -1,6 +1,0 @@
-{
-  "name": "NFC Event Tag Scoring",
-  "description": "سیستم مسابقه و امتیازدهی تگ‌های NFC بر پایه PHP و MySQL برای میزبانی در cPanel",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
