@@ -14,15 +14,9 @@ $logoPath = !empty($tag['logo_path']) ? $tag['logo_path'] : null;
 $logoTintMode = isset($tag['logo_tint_mode']) ? (int)$tag['logo_tint_mode'] : 1;
 $hasCustomLogo = !empty($logoPath) && strpos($logoPath, 'assets/uploads/') === 0 && file_exists(__DIR__ . '/../' . $logoPath);
 
-// دریافت پیام انگیزشی (از نتیجه ثبت یا تصادفی برای اسکن فعلی)
-$activeQuote = '';
-if (!empty($flash_status) && !empty($flash_status['motivation_quote'])) {
-    $activeQuote = $flash_status['motivation_quote'];
-} elseif (!empty($motivation_quote)) {
-    $activeQuote = $motivation_quote;
-} elseif (function_exists('get_random_motivation_message')) {
-    $activeQuote = get_random_motivation_message();
-}
+// پیام انگیزشی فقط پس از ثبت موفق نمایش داده می‌شود
+$activeQuote = (!empty($just_claimed) && !empty($flash_status['motivation_quote'])) ? $flash_status['motivation_quote'] : '';
+$showResult = (int)$tag['show_result_to_scanner'] === 1;
 
 $extra_scripts = ['/assets/scan.js'];
 $body_class = 'is-scan-view';
@@ -50,11 +44,13 @@ $body_class = 'is-scan-view';
                     <?php if ($hasCustomLogo): 
                         $logoFullUrl = path_url('/' . $logoPath);
                     ?>
-                        <div class="scan-logo-overlay-wrapper" style="--logo-url: url('<?= e($logoFullUrl) ?>');">
+                        <div class="scan-logo-overlay-wrapper<?= $logoTintMode === 1 ? '' : ' no-tint' ?>" style="--logo-url: url('<?= e($logoFullUrl) ?>');">
                             <!-- تصویر پایه لوگو -->
                             <img src="<?= e($logoFullUrl) ?>" alt="لوگوی سازمان" class="scan-org-logo-img">
                             <!-- لایه Color Overlay دقیق به رنگ تگ اسکن‌شده -->
-                            <div class="scan-logo-color-overlay"></div>
+                            <?php if ($logoTintMode === 1): ?>
+                                <div class="scan-logo-color-overlay"></div>
+                            <?php endif; ?>
                         </div>
                     <?php else: ?>
                         <!-- نشان پیش‌فرض شکیل مسابقه در صورت عدم آپلود لوگوی اختصاصی -->
@@ -84,30 +80,14 @@ $body_class = 'is-scan-view';
                 </div>
             </div>
 
-            <!-- کارت پیام انگیزشی و ترغیب‌کننده -->
-            <?php if (!empty($activeQuote)): ?>
-                <div class="glass-motivation-card">
-                    <div class="motivation-sparkle-icon">✨</div>
-                    <div class="motivation-body">
-                        <p class="motivation-quote-text"><?= e($activeQuote) ?></p>
-                    </div>
-                </div>
-            <?php endif; ?>
-
             <div class="scan-card-body">
-                <!-- نمایش وضعیت پیام فلش یا نتایج ثبت قبلی -->
-                <?php if (!empty($flash_status)): ?>
-                    <?php 
-                        $fType = isset($flash_status['type']) ? $flash_status['type'] : 'info';
+                <?php if (!empty($flash_status) && empty($just_claimed)): ?>
+                    <?php
+                        $fType = isset($flash_status['type']) && in_array($flash_status['type'], ['error', 'warning', 'info'], true) ? $flash_status['type'] : 'info';
                         $fMsg = isset($flash_status['message']) ? $flash_status['message'] : '';
                     ?>
-                    <div class="status-box status-<?= e($fType) ?> glass-status-box">
-                        <div class="status-icon">
-                            <?php if ($fType === 'success'): ?>🎉<?php endif; ?>
-                            <?php if ($fType === 'error'): ?>✕<?php endif; ?>
-                            <?php if ($fType === 'warning'): ?>⚠<?php endif; ?>
-                            <?php if ($fType === 'info'): ?>ℹ<?php endif; ?>
-                        </div>
+                    <div class="status-box status-<?= e($fType) ?> glass-status-box" role="alert">
+                        <div class="status-icon"><?= $fType === 'error' ? '✕' : ($fType === 'warning' ? '⚠' : 'ℹ') ?></div>
                         <div class="status-text"><?= e($fMsg) ?></div>
                     </div>
                 <?php endif; ?>
@@ -119,69 +99,83 @@ $body_class = 'is-scan-view';
                         <div class="status-text"><?= e($status_message) ?></div>
                     </div>
 
+                <?php elseif (!empty($just_claimed)): ?>
+                    <!-- نتیجه ثبت موفق (بدون نمایش دوباره فرم) -->
+                    <div class="scan-result scan-result-success" role="status">
+                        <div class="scan-result-icon">🎉</div>
+                        <div class="scan-result-text"><?= e($flash_status['message']) ?></div>
+                    </div>
+                    <?php if ($activeQuote !== ''): ?>
+                        <div class="glass-motivation-card">
+                            <div class="motivation-sparkle-icon">✨</div>
+                            <div class="motivation-body">
+                                <p class="motivation-quote-text"><?= e($activeQuote) ?></p>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                    <p class="scan-next-hint">می‌توانید این صفحه را ببندید و سراغ تگ بعدی بروید.</p>
+
+                <?php elseif (!empty($my_claim)): ?>
+                    <!-- تیم این گوشی قبلاً همین تگ را ثبت کرده است -->
+                    <div class="scan-result scan-result-done" role="status">
+                        <div class="scan-result-icon">✅</div>
+                        <div class="scan-result-text">
+                            «<?= e($my_claim['team_name']) ?>» این تگ را قبلاً ثبت کرده است<?php if ($showResult): ?> (<?= e(rank_to_words_fa($my_claim['claim_rank'])) ?> تیم، <?= fa_num($my_claim['points']) ?> امتیاز)<?php endif; ?>.
+                        </div>
+                    </div>
+                    <p class="scan-next-hint">نیازی به ثبت دوباره نیست؛ سراغ تگ بعدی بروید.</p>
+
                 <?php elseif (!empty($is_full)): ?>
                     <!-- ظرفیت تگ تکمیل است -->
                     <div class="status-box status-warning glass-status-box">
                         <div class="status-icon">🛑</div>
                         <div class="status-text">
-                            این تگ قبلاً توسط <strong><?= fa_num($claims_count) ?></strong> تیم دیگر اسکن شده و ظرفیت امتیازگیری آن تکمیل شده است.
+                            این تگ قبلاً توسط <strong><?= fa_num($claims_count) ?></strong> تیم اسکن شده و ظرفیت امتیازگیری آن تکمیل شده است.
                         </div>
                     </div>
 
                 <?php elseif (!empty($can_claim)): ?>
-                    <!-- فرم انتخاب تیم و ثبت امتیاز با استایل شیشه‌ای -->
                     <div class="claim-form-section">
-                        <p class="claim-instruction">
-                            نام تیم خود را مشخص کرده و دکمه ثبت را لمس کنید:
-                        </p>
-
                         <form id="claimForm" method="POST" action="<?= e(path_url('/' . $tag['code'])) ?>" class="claim-form">
                             <?= csrf_field() ?>
 
                             <?php if (!empty($locked_team)): ?>
-                            <div class="form-group mb-4">
-                                <input type="hidden" name="team_id" id="lockedTeamId" value="<?= (int)$locked_team['team_id'] ?>" data-team-name="<?= e($locked_team['team_name']) ?>">
-                                <div class="status-box status-info glass-status-box">
-                                    <div class="status-icon">🔒</div>
-                                    <div class="status-text">این گوشی برای تیم <strong><?= e($locked_team['team_name']) ?></strong> ثبت شده است.</div>
-                                </div>
-                            </div>
-                            <?php else: ?>
-                            <?php if (!empty($device_lock_enabled)): ?>
-                                <p class="claim-instruction" style="font-size: 0.85rem; opacity: 0.85;">⚠️ توجه: این گوشی پس از اولین ثبت، فقط برای همان تیم می‌تواند ثبت کند.</p>
-                            <?php endif; ?>
-                            <div class="form-group mb-4">
-                                <label for="teamSelect" class="form-label d-flex-between">
-                                    <span>انتخاب تیم:</span>
-                                    <span class="required-tag">* الزامی</span>
-                                </label>
-                                <div class="glass-select-container">
-                                    <select name="team_id" id="teamSelect" class="form-control form-select glass-select" required>
-                                        <option value="" selected>-- انتخاب تیم (لطفاً تیم خود را انتخاب کنید) --</option>
-                                        <?php foreach ($teams as $t): ?>
-                                            <option value="<?= (int)$t['id'] ?>"><?= e($t['name']) ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div id="teamSelectFeedback" class="field-feedback" style="display: none;">
-                                    ⚠️ لطفاً ابتدا نام تیم خود را از لیست بالا انتخاب کنید.
-                                </div>
-                            </div>
-                            <?php endif; ?>
-
-                            <div class="form-actions">
-                                <button type="button" id="btnSubmitClaim" class="btn btn-tag-gradient btn-block btn-lg">
+                                <input type="hidden" name="team_id" id="teamIdInput" value="<?= (int)$locked_team['team_id'] ?>">
+                                <p class="claim-instruction">این گوشی برای «<strong><?= e($locked_team['team_name']) ?></strong>» ثبت شده است.</p>
+                                <button type="button" class="btn btn-tag-gradient btn-block btn-lg team-pick-locked" data-team-id="<?= (int)$locked_team['team_id'] ?>" data-team-name="<?= e($locked_team['team_name']) ?>">
                                     <span class="btn-shine"></span>
-                                    <span class="btn-text">ثبت این تگ برای تیم</span>
-                                    <span class="btn-arrow">←</span>
+                                    <span class="btn-text">ثبت این تگ برای «<?= e($locked_team['team_name']) ?>»</span>
                                 </button>
-                            </div>
+                            <?php elseif (empty($teams)): ?>
+                                <div class="status-box status-info glass-status-box">
+                                    <div class="status-icon">ℹ</div>
+                                    <div class="status-text">هنوز تیمی برای این رویداد تعریف نشده است. لطفاً به برگزارکننده اطلاع دهید.</div>
+                                </div>
+                            <?php else: ?>
+                                <input type="hidden" name="team_id" id="teamIdInput" value="">
+                                <p class="claim-instruction">تیم خود را انتخاب کنید:</p>
+                                <?php if (!empty($device_lock_enabled)): ?>
+                                    <p class="claim-note">⚠️ این گوشی پس از اولین ثبت، فقط برای همان تیم می‌تواند ثبت کند.</p>
+                                <?php endif; ?>
+                                <?php if (count($teams) > 6): ?>
+                                    <input type="search" id="teamSearch" class="form-control glass-input" placeholder="🔍 جستجوی نام تیم..." autocomplete="off" aria-label="جستجوی نام تیم">
+                                <?php endif; ?>
+                                <div class="team-pick-list" id="teamPickList" role="list">
+                                    <?php foreach ($teams as $t): ?>
+                                        <button type="button" class="team-pick" role="listitem" data-team-id="<?= (int)$t['id'] ?>" data-team-name="<?= e($t['name']) ?>">
+                                            <span class="team-pick-name"><?= e($t['name']) ?></span>
+                                            <span class="team-pick-arrow">←</span>
+                                        </button>
+                                    <?php endforeach; ?>
+                                </div>
+                                <p id="teamSearchEmpty" class="claim-note" style="display: none;">تیمی با این نام پیدا نشد.</p>
+                            <?php endif; ?>
                         </form>
                     </div>
                 <?php endif; ?>
 
                 <?php if (!empty($board_url)): ?>
-                    <div class="scan-board-link" style="text-align: center; margin-top: 1.25rem;">
+                    <div class="scan-board-link">
                         <a href="<?= e($board_url) ?>" class="btn btn-glass-secondary btn-block">🏆 مشاهده جدول رده‌بندی زنده</a>
                     </div>
                 <?php endif; ?>
@@ -207,22 +201,22 @@ $body_class = 'is-scan-view';
         </div>
         <div class="modal-body">
             <p class="modal-question">
-                آیا مطمئن هستید که تیم شما:
+                این تگ برای این تیم ثبت شود؟
             </p>
             <div class="modal-team-highlight">
                 <span id="modalTeamName" class="highlight-team-text"></span>
             </div>
             <div class="modal-alert-box">
                 <span class="modal-alert-icon">⚠️</span>
-                <span>توجه: پس از تأیید نهایی، این تگ به نام تیم شما ثبت شده و قابل تغییر نخواهد بود.</span>
+                <span>توجه: پس از تأیید، این تگ به نام این تیم ثبت شده و قابل تغییر نخواهد بود.</span>
             </div>
         </div>
         <div class="modal-footer">
             <button type="button" id="btnConfirmYes" class="btn btn-tag-gradient btn-lg flex-1">
                 بله، ثبت کن
             </button>
-            <button type="button" id="btnConfirmCancel" class="btn btn-glass-secondary btn-lg">
-                انصراف و تغییر تیم
+            <button type="button" id="btnConfirmCancel" class="btn btn-glass-secondary btn-lg btn-nowrap">
+                انصراف
             </button>
         </div>
     </div>

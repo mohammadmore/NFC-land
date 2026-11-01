@@ -276,6 +276,23 @@ function record_rate_limit($pdo, $kind, $key) {
 }
 
 /**
+ * نمایش صفحه پیام کاربرپسند (به جای متن خام die) و توقف اجرا
+ */
+function show_message_page($statusCode, $title, $text, $icon = 'ℹ️', $link = null, $linkText = null) {
+    send_security_headers();
+    http_response_code($statusCode);
+    render_view('message', [
+        'page_title' => $title,
+        'message_title' => $title,
+        'message_text' => $text,
+        'message_icon' => $icon,
+        'message_link' => $link,
+        'message_link_text' => $linkText,
+    ]);
+    exit;
+}
+
+/**
  * نمایش صفحه ۴۰۴ همسان و امن
  */
 function show_404() {
@@ -516,4 +533,25 @@ function get_device_lock($pdo, $eventId, $deviceId) {
     $row = $stmt->fetch();
     $stmt->closeCursor();
     return $row ?: null;
+}
+
+/**
+ * تیمی که این گوشی (نشست) آخرین بار در رویداد برای آن ثبت کرده است
+ */
+function get_session_team($eventId) {
+    return isset($_SESSION['my_team'][(int)$eventId]) ? (int)$_SESSION['my_team'][(int)$eventId] : 0;
+}
+
+function set_session_team($eventId, $teamId) {
+    $_SESSION['my_team'][(int)$eventId] = (int)$teamId;
+}
+
+/**
+ * آدرس فایل‌های استاتیک همراه با نسخه (زمان تغییر فایل) برای جلوگیری از نمایش نسخه قدیمی از کش مرورگر
+ */
+function asset_url($path) {
+    $path = '/' . ltrim($path, '/');
+    $abs = dirname(__DIR__) . $path;
+    $v = is_file($abs) ? filemtime($abs) : 0;
+    return path_url($path) . ($v ? '?v=' . $v : '');
 }

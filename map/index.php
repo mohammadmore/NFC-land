@@ -635,6 +635,32 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
             exit;
         }
 
+        // ۶.۹.۱. ویرایش گروهی نام تیم‌ها (یک دکمه ذخیره برای کل جدول)
+        if ($subAction === 'teams/update-bulk' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+            require_csrf();
+            $rows = (isset($_POST['teams']) && is_array($_POST['teams'])) ? $_POST['teams'] : [];
+            $upTm = $pdo->prepare('UPDATE teams SET name = :name WHERE id = :id AND event_id = :eid AND name <> :name2');
+            $changed = 0;
+            $failed = [];
+            foreach ($rows as $tmId => $row) {
+                if (!is_array($row)) continue;
+                $tName = isset($row['name']) ? str_limit_u($row['name'], 100) : '';
+                if ($tName === '') continue;
+                try {
+                    $upTm->execute(['name' => $tName, 'name2' => $tName, 'id' => (int)$tmId, 'eid' => $eventId]);
+                    $changed += $upTm->rowCount();
+                } catch (PDOException $e) {
+                    $failed[] = $tName;
+                }
+            }
+            if (!empty($failed)) {
+                flash_set('error', 'این نام‌ها تکراری هستند و ذخیره نشدند: ' . implode('، ', $failed), 'error');
+            }
+            flash_set('success', $changed > 0 ? fa_num($changed) . ' نام تیم به‌روزرسانی شد.' : 'تغییر دیگری برای ذخیره وجود نداشت.', $changed > 0 ? 'success' : 'info');
+            header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=teams'));
+            exit;
+        }
+
         // ۶.۱۰. حذف تیم
         if (preg_match('#^teams/(\d+)/delete$#', $subAction, $tMatch) && $_SERVER['REQUEST_METHOD'] === 'POST') {
             require_csrf();
@@ -751,6 +777,54 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
                 flash_set('success', 'تگ با موفقیت اضافه شد.', 'success');
             }
             header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=tags'));
+            exit;
+        }
+
+        // ۶.۱۳.۱. ویرایش گروهی نام و رنگ تگ‌ها (یک دکمه ذخیره برای کل جدول)
+        if ($subAction === 'tags/update-bulk' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+            require_csrf();
+            $rows = (isset($_POST['tags']) && is_array($_POST['tags'])) ? $_POST['tags'] : [];
+            $colStmt = $pdo->prepare('SELECT id FROM colors WHERE event_id = :eid');
+            $colStmt->execute(['eid' => $eventId]);
+            $validColors = array_map('intval', $colStmt->fetchAll(PDO::FETCH_COLUMN));
+
+            $upTag = $pdo->prepare('UPDATE tags SET name = :name, color_id = :cid WHERE id = :id AND event_id = :eid AND (name <> :name2 OR COALESCE(color_id, 0) <> COALESCE(:cid2, 0))');
+            $changed = 0;
+            $pdo->beginTransaction();
+            try {
+                foreach ($rows as $tid => $row) {
+                    if (!is_array($row)) continue;
+                    $tName = isset($row['name']) ? str_limit_u($row['name'], 100) : '';
+                    if ($tName === '') continue;
+                    $cid = (isset($row['color_id']) && in_array((int)$row['color_id'], $validColors, true)) ? (int)$row['color_id'] : null;
+                    $upTag->execute(['name' => $tName, 'name2' => $tName, 'cid' => $cid, 'cid2' => $cid, 'id' => (int)$tid, 'eid' => $eventId]);
+                    $changed += $upTag->rowCount();
+                }
+                $pdo->commit();
+            } catch (Exception $ex) {
+                $pdo->rollBack();
+                throw $ex;
+            }
+            flash_set('success', $changed > 0 ? fa_num($changed) . ' تگ به‌روزرسانی شد.' : 'تغییری برای ذخیره وجود نداشت.', $changed > 0 ? 'success' : 'info');
+            header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=tags'));
+            exit;
+        }
+
+        // ۶.۱۳.۲. صفحه چاپ برچسب‌ها و QR کد تگ‌ها
+        if ($subAction === 'tags/print') {
+            $prStmt = $pdo->prepare('
+                SELECT tg.id, tg.name, tg.code, c.name AS color_name, c.hex AS color_hex
+                FROM tags tg
+                LEFT JOIN colors c ON c.id = tg.color_id
+                WHERE tg.event_id = :eid
+                ORDER BY tg.id ASC
+            ');
+            $prStmt->execute(['eid' => $eventId]);
+            render_view('tags_print', [
+                'page_title' => 'چاپ تگ‌های ' . $event['name'],
+                'event' => $event,
+                'print_tags' => $prStmt->fetchAll(),
+            ], null);
             exit;
         }
 

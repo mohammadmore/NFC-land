@@ -22,6 +22,21 @@ function init_session() {
         session_name(SESSION_NAME);
     }
 
+    // ذخیره نشست‌ها در پوشه محافظت‌شده data/sessions با عمر ۱۲ ساعت.
+    // در بسیاری از هاست‌ها نشست‌های پیش‌فرض PHP پس از ~۲۴ دقیقه بی‌فعالیتی پاک می‌شوند
+    // و ادمین یا تیم‌ها وسط مسابقه با «صفحه منقضی شده» مواجه می‌شوند.
+    $sessDir = dirname(__DIR__) . '/data/sessions';
+    if (!is_dir($sessDir)) {
+        @mkdir($sessDir, 0700, true);
+    }
+    if (is_dir($sessDir) && is_writable($sessDir)) {
+        session_save_path($sessDir);
+        @ini_set('session.gc_probability', '1');
+        @ini_set('session.gc_divisor', '200');
+    }
+    @ini_set('session.gc_maxlifetime', '43200');
+    @ini_set('session.use_strict_mode', '1');
+
     // تنظیمات امنیتی کوکی نشست
     if (PHP_VERSION_ID >= 70300) {
         session_set_cookie_params([

@@ -49,7 +49,15 @@ function csrf_verify($token = null) {
  */
 function require_csrf() {
     if (!csrf_verify()) {
-        http_response_code(403);
-        die('درخواست نامعتبر است (خطای اعتبارسنجی CSRF). لطفاً صفحه را رفرش کرده و مجدداً تلاش کنید.');
+        // معمولاً به دلیل باز ماندن طولانی صفحه و منقضی شدن نشست رخ می‌دهد
+        $back = isset($_SERVER['REQUEST_URI']) ? strtok($_SERVER['REQUEST_URI'], '?') : path_url('/admin/events');
+        show_message_page(
+            403,
+            'صفحه منقضی شده است',
+            'این صفحه مدت زیادی باز مانده بود و اعتبار فرم آن به پایان رسیده است. لطفاً صفحه را دوباره باز کرده و عملیات را تکرار کنید.',
+            '⏳',
+            $back,
+            'باز کردن دوباره صفحه'
+        );
     }
 }

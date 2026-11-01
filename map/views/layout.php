@@ -7,6 +7,8 @@ if (!defined('APP_INIT')) {
 }
 $isLoggedIn = function_exists('is_admin_logged_in') && is_admin_logged_in();
 $adminUser = isset($_SESSION['admin_username']) ? $_SESSION['admin_username'] : '';
+// صفحات عمومی شرکت‌کنندگان (اسکن تگ و لیدربورد عمومی) بدون هدر پنل مدیریت نمایش داده می‌شوند
+$isPublicView = !empty($body_class) && (strpos($body_class, 'is-scan-view') !== false || strpos($body_class, 'is-board-view') !== false);
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -15,9 +17,11 @@ $adminUser = isset($_SESSION['admin_username']) ? $_SESSION['admin_username'] : 
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title><?= isset($page_title) ? e($page_title) . ' | ' : '' ?>سامانه امتیازدهی تگ NFC</title>
     <meta name="robots" content="noindex, nofollow">
-    <link rel="stylesheet" href="<?= e(path_url('/assets/style.css')) ?>">
+    <meta name="theme-color" content="<?= $isPublicView && strpos($body_class, 'is-scan-view') !== false ? '#090d16' : '#ffffff' ?>">
+    <link rel="stylesheet" href="<?= e(asset_url('/assets/style.css')) ?>">
 </head>
 <body class="app-body<?= !empty($body_class) ? ' ' . e($body_class) : '' ?>">
+    <?php if (!$isPublicView): ?>
     <header class="app-header">
         <div class="header-container">
             <div class="header-brand">
@@ -36,6 +40,7 @@ $adminUser = isset($_SESSION['admin_username']) ? $_SESSION['admin_username'] : 
             <?php endif; ?>
         </div>
     </header>
+    <?php endif; ?>
 
     <main class="app-main">
         <div class="main-container">
@@ -72,13 +77,15 @@ $adminUser = isset($_SESSION['admin_username']) ? $_SESSION['admin_username'] : 
     <footer class="app-footer">
         <div class="footer-container">
             <p class="footer-credit-line1">Powered by Asva Studio</p>
-            <p class="footer-credit-line2">توسعه یافته توسط شرکت داده‌پردازان اسوا</p>
+            <?php if (!$isPublicView): ?>
+                <p class="footer-credit-line2">توسعه یافته توسط شرکت داده‌پردازان اسوا</p>
+            <?php endif; ?>
         </div>
     </footer>
 
     <?php if (isset($extra_scripts) && is_array($extra_scripts)): ?>
         <?php foreach ($extra_scripts as $script): ?>
-            <script src="<?= e(path_url($script)) ?>"></script>
+            <script src="<?= e(asset_url($script)) ?>"></script>
         <?php endforeach; ?>
     <?php endif; ?>
 </body>

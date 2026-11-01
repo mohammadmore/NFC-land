@@ -1,129 +1,126 @@
 /**
  * NFC Event Tag Scoring - Scanner Client Script
- * Confirmation modal popup & double-click prevention
- * Enforces explicit team selection by the user without pre-selecting any team
+ * انتخاب تیم با لمس (لیست دکمه‌ای + جستجو)، پاپ‌آپ تأیید نهایی و جلوگیری از ارسال تکراری
  */
 
 document.addEventListener('DOMContentLoaded', function () {
-    const claimForm = document.getElementById('claimForm');
-    const teamSelect = document.getElementById('teamSelect');
-    const btnSubmitClaim = document.getElementById('btnSubmitClaim');
-    const confirmModal = document.getElementById('confirmModal');
-    const modalTeamName = document.getElementById('modalTeamName');
-    const btnConfirmYes = document.getElementById('btnConfirmYes');
-    const btnConfirmCancel = document.getElementById('btnConfirmCancel');
-    const teamFeedback = document.getElementById('teamSelectFeedback');
+    var claimForm = document.getElementById('claimForm');
+    var teamIdInput = document.getElementById('teamIdInput');
+    var confirmModal = document.getElementById('confirmModal');
+    var modalTeamName = document.getElementById('modalTeamName');
+    var btnConfirmYes = document.getElementById('btnConfirmYes');
+    var btnConfirmCancel = document.getElementById('btnConfirmCancel');
+    var teamSearch = document.getElementById('teamSearch');
+    var teamSearchEmpty = document.getElementById('teamSearchEmpty');
 
-    if (!claimForm || !btnSubmitClaim || !confirmModal) {
+    if (!claimForm || !teamIdInput || !confirmModal || !btnConfirmYes || !btnConfirmCancel) {
         return;
     }
 
-    // انتقال عنصر مودال به ریشه مستقیم body تا هیچ نگهدارنده یا اسکرولی مانع نمایش تمام‌صفحه پاپ‌آپ نشود
+    // انتقال مودال به ریشه body تا هیچ نگهدارنده یا اسکرولی مانع نمایش تمام‌صفحه آن نشود
     if (confirmModal.parentElement !== document.body) {
         document.body.appendChild(confirmModal);
     }
 
-    let isSubmitting = false;
-    // در حالت «قفل گوشی روی تیم»، تیم از قبل مشخص است و منوی انتخاب تیم نمایش داده نمی‌شود
-    const lockedTeamInput = document.getElementById('lockedTeamId');
+    var isSubmitting = false;
+    var lastTrigger = null;
 
-    // توابع کمکی باز و بسته کردن پاپ‌آپ تایید
-    function openConfirmPopup(teamName) {
-        if (modalTeamName && teamName) {
+    function openConfirm(teamId, teamName, trigger) {
+        teamIdInput.value = teamId;
+        if (modalTeamName) {
             modalTeamName.textContent = teamName;
         }
+        lastTrigger = trigger || null;
         confirmModal.style.display = 'flex';
         document.body.classList.add('modal-open');
+        btnConfirmYes.focus();
     }
 
-    function closeConfirmPopup() {
+    function closeConfirm() {
+        if (isSubmitting) return;
         confirmModal.style.display = 'none';
         document.body.classList.remove('modal-open');
+        if (!claimForm.querySelector('.team-pick-locked')) {
+            teamIdInput.value = '';
+        }
+        if (lastTrigger) {
+            lastTrigger.focus();
+        }
     }
 
-    // اطمینان قطعی از اینکه در بدو ورود هیچ تیمی ناخواسته انتخاب نشده باشد
-    if (teamSelect) {
-        teamSelect.selectedIndex = 0;
-        teamSelect.value = '';
+    // لمس نام تیم (یا دکمه تیم قفل‌شده) پاپ‌آپ تأیید را باز می‌کند
+    claimForm.addEventListener('click', function (e) {
+        var btn = e.target.closest('.team-pick, .team-pick-locked');
+        if (!btn || isSubmitting) return;
+        e.preventDefault();
+        openConfirm(btn.getAttribute('data-team-id'), btn.getAttribute('data-team-name') || '', btn);
+    });
 
-        // باز شدن خودکار پاپ‌آپ تایید بلافاصله پس از انتخاب تیم از منوی کشویی
-        teamSelect.addEventListener('change', function () {
-            const selectedVal = teamSelect.value ? teamSelect.value.trim() : '';
-            if (selectedVal && selectedVal !== '' && selectedVal !== '0') {
-                teamSelect.classList.remove('is-invalid');
-                if (teamFeedback) {
-                    teamFeedback.style.display = 'none';
+    // جلوگیری از ارسال فرم با Enter در کادر جستجو
+    claimForm.addEventListener('submit', function (e) {
+        if (!isSubmitting) e.preventDefault();
+    });
+
+    // جستجوی نام تیم (با یکسان‌سازی ی/ک عربی و فارسی)
+    if (teamSearch) {
+        var normalize = function (str) {
+            return String(str || '')
+                .replace(/ي/g, 'ی').replace(/ى/g, 'ی').replace(/ك/g, 'ک')
+                .replace(/‌/g, ' ').replace(/\s+/g, ' ')
+                .trim().toLowerCase();
+        };
+        var picks = Array.prototype.slice.call(claimForm.querySelectorAll('.team-pick'));
+        teamSearch.addEventListener('input', function () {
+            var q = normalize(teamSearch.value);
+            var visible = 0;
+            picks.forEach(function (p) {
+                var show = q === '' || normalize(p.getAttribute('data-team-name')).indexOf(q) !== -1;
+                p.style.display = show ? '' : 'none';
+                if (show) visible++;
+            });
+            if (teamSearchEmpty) {
+                teamSearchEmpty.style.display = visible === 0 ? 'block' : 'none';
+            }
+        });
+        teamSearch.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                var firstVisible = picks.filter(function (p) { return p.style.display !== 'none'; });
+                if (firstVisible.length === 1) {
+                    firstVisible[0].click();
                 }
-                const selectedOption = teamSelect.options[teamSelect.selectedIndex];
-                const teamName = selectedOption ? selectedOption.text : '';
-                openConfirmPopup(teamName);
             }
         });
     }
 
-    // لمس دکمه ثبت فرم
-    btnSubmitClaim.addEventListener('click', function (e) {
-        e.preventDefault();
+    btnConfirmCancel.addEventListener('click', closeConfirm);
 
-        if (lockedTeamInput) {
-            openConfirmPopup(lockedTeamInput.getAttribute('data-team-name') || '');
-            return;
-        }
-
-        const selectedVal = teamSelect ? teamSelect.value.trim() : '';
-        if (!selectedVal || selectedVal === '' || selectedVal === '0') {
-            if (teamSelect) {
-                teamSelect.classList.add('is-invalid', 'shake-animation');
-                setTimeout(() => {
-                    teamSelect.classList.remove('shake-animation');
-                }, 600);
-                teamSelect.focus();
-            }
-            if (teamFeedback) {
-                teamFeedback.style.display = 'block';
-            }
-            return;
-        }
-
-        const selectedOption = teamSelect.options[teamSelect.selectedIndex];
-        const teamName = selectedOption ? selectedOption.text : '';
-        openConfirmPopup(teamName);
-    });
-
-    // انصراف از مودال و تغییر تیم
-    btnConfirmCancel.addEventListener('click', function () {
-        closeConfirmPopup();
-        if (teamSelect) {
-            teamSelect.focus();
-        }
-    });
-
-    // بستن با لمس پس‌زمینه بیرونی مودال
     confirmModal.addEventListener('click', function (e) {
-        if (e.target === confirmModal && !isSubmitting) {
-            closeConfirmPopup();
-        }
+        if (e.target === confirmModal) closeConfirm();
     });
 
-    // تایید نهایی و ارسال قطعی فرم به سرور
-    btnConfirmYes.addEventListener('click', function () {
-        if (isSubmitting) {
-            return;
-        }
-        isSubmitting = true;
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && confirmModal.style.display === 'flex') closeConfirm();
+    });
 
-        // غیرفعال‌سازی دکمه‌ها برای جلوگیری از ارسال تکراری و Race Condition
+    // تأیید نهایی و ارسال قطعی فرم
+    btnConfirmYes.addEventListener('click', function () {
+        if (isSubmitting || !teamIdInput.value) return;
+        isSubmitting = true;
         btnConfirmYes.disabled = true;
         btnConfirmCancel.disabled = true;
-        btnConfirmYes.innerHTML = '<span class="spinner-small"></span> در حال ثبت امتیاز...';
-
+        btnConfirmYes.innerHTML = '<span class="spinner-small"></span> در حال ثبت...';
         claimForm.submit();
     });
 
-    // بستن پاپ‌آپ با کلید Escape
-    document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && confirmModal.style.display === 'flex' && !isSubmitting) {
-            closeConfirmPopup();
+    // بازگشت با دکمه Back مرورگر (bfcache): بازنشانی وضعیت دکمه‌ها
+    window.addEventListener('pageshow', function (e) {
+        if (e.persisted) {
+            isSubmitting = false;
+            btnConfirmYes.disabled = false;
+            btnConfirmCancel.disabled = false;
+            btnConfirmYes.textContent = 'بله، ثبت کن';
+            closeConfirm();
         }
     });
 });

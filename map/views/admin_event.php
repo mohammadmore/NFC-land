@@ -67,6 +67,7 @@ $positionsCount = (int)$event['positions_count'];
                         <label class="auto-refresh-toggle">
                             <input type="checkbox" id="autoRefreshCheckbox" checked>
                             <span>به‌روزرسانی خودکار (۲۰ ثانیه)</span>
+                            <small class="text-muted" id="leaderboardUpdated"></small>
                         </label>
                         <button type="button" id="btnManualRefresh" class="btn btn-sm btn-primary">
                             🔄 به‌روزرسانی
@@ -125,7 +126,7 @@ $positionsCount = (int)$event['positions_count'];
                     <h2 class="card-title">ثبت‌ها به تفکیک تگ و مدیریت ترتیب رتبه‌ها</h2>
                     <small class="text-muted">در صورت حذف هر ثبت، رتبه‌های بعدی به طور خودکار بازشماری و امتیازات تصحیح می‌شوند.</small>
                 </div>
-                <div class="card-body">
+                <div class="card-body" id="claimsByTagBody">
                     <?php if (empty($claims_by_tag)): ?>
                         <p class="text-muted text-center p-3">هیچ تگی وجود ندارد یا ثبتی انجام نشده است.</p>
                     <?php else: ?>
@@ -226,71 +227,87 @@ $positionsCount = (int)$event['positions_count'];
                 </div>
             </div>
 
-            <!-- جدول تگ‌ها -->
+            <!-- جدول تگ‌ها (ویرایش گروهی با یک دکمه ذخیره) -->
             <div class="card">
-                <div class="card-header"><h3 class="card-title">لیست تگ‌های تعریف‌شده (<?= fa_num(count($tags)) ?> تگ)</h3></div>
+                <div class="card-header d-flex-between" style="flex-wrap: wrap; gap: 0.5rem;">
+                    <div>
+                        <h3 class="card-title">لیست تگ‌های تعریف‌شده (<?= fa_num(count($tags)) ?> تگ)</h3>
+                        <small class="text-muted">نام و رنگ چند تگ را تغییر دهید و یک‌جا ذخیره کنید. دکمه «کپی» پس از کپی، تگ بعدی را آماده می‌کند.</small>
+                    </div>
+                    <?php if (!empty($tags)): ?>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <a href="<?= e(path_url('/admin/events/' . $event['id'] . '/tags/print')) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">🖨️ چاپ برچسب و QR</a>
+                        <button type="button" id="btnWriteSequence" class="btn btn-sm btn-primary nfc-write-only" style="display: none;">📲 رایت پشت‌سرهم روی NFC</button>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <div id="nfcWriteStatus" class="nfc-write-status" style="display: none;" role="status" aria-live="polite"></div>
                 <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table tags-table">
-                            <thead>
-                                <tr>
-                                    <th>نام تگ</th>
-                                    <th>رنگ</th>
-                                    <th>لینک کامل جهت رایت روی NFC</th>
-                                    <th>وضعیت ثبت‌ها</th>
-                                    <th>عملیات</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (empty($tags)): ?>
-                                    <tr><td colspan="5" class="text-center text-muted p-4">هنوز تگی برای این رویداد ساخته نشده است.</td></tr>
-                                <?php else: ?>
-                                    <?php foreach ($tags as $tg): 
-                                        $fullUrl = url('/' . $tg['code']);
-                                    ?>
-                                        <tr>
-                                            <td>
-                                                <form id="editTagForm<?= (int)$tg['id'] ?>" method="POST" action="<?= e(path_url('/admin/events/' . $event['id'] . '/tags/' . $tg['id'] . '/update')) ?>" style="display:none;">
-                                                    <?= csrf_field() ?>
-                                                </form>
-                                                <input type="text" form="editTagForm<?= (int)$tg['id'] ?>" name="name" value="<?= e($tg['name']) ?>" class="form-control form-control-sm" required>
-                                            </td>
-                                            <td>
-                                                <div style="display: flex; gap: 0.35rem; align-items: center;">
-                                                    <select form="editTagForm<?= (int)$tg['id'] ?>" name="color_id" class="form-control form-control-sm form-select">
+                    <form id="tagsBulkForm" class="dirty-track-form" method="POST" action="<?= e(path_url('/admin/events/' . $event['id'] . '/tags/update-bulk')) ?>">
+                        <?= csrf_field() ?>
+                        <!-- دکمه پیش‌فرض فرم: Enter در کادرها «ذخیره» را اجرا می‌کند، نه حذف ردیف اول -->
+                        <button type="submit" class="default-submit-hidden" tabindex="-1" aria-hidden="true">ذخیره</button>
+                        <div class="table-responsive">
+                            <table class="table tags-table">
+                                <thead>
+                                    <tr>
+                                        <th>نام تگ</th>
+                                        <th>رنگ</th>
+                                        <th>لینک کامل جهت رایت روی NFC</th>
+                                        <th>وضعیت ثبت‌ها</th>
+                                        <th>عملیات</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (empty($tags)): ?>
+                                        <tr><td colspan="5" class="text-center text-muted p-4">هنوز تگی برای این رویداد ساخته نشده است.</td></tr>
+                                    <?php else: ?>
+                                        <?php foreach ($tags as $tg):
+                                            $tid = (int)$tg['id'];
+                                            $fullUrl = url('/' . $tg['code']);
+                                        ?>
+                                            <tr class="tag-row" data-url="<?= e($fullUrl) ?>" data-name="<?= e($tg['name']) ?>">
+                                                <td>
+                                                    <input type="text" name="tags[<?= $tid ?>][name]" value="<?= e($tg['name']) ?>" class="form-control form-control-sm" required maxlength="100">
+                                                </td>
+                                                <td>
+                                                    <select name="tags[<?= $tid ?>][color_id]" class="form-control form-control-sm form-select">
                                                         <option value="">بدون رنگ</option>
                                                         <?php foreach ($colors as $col): ?>
-                                                            <option value="<?= (int)$col['id'] ?>" <?= ((int)$tg['color_id'] === (int)$col['id']) ? 'selected' : '' ?>>
-                                                                <?= e($col['name']) ?>
-                                                            </option>
+                                                            <option value="<?= (int)$col['id'] ?>" <?= ((int)$tg['color_id'] === (int)$col['id']) ? 'selected' : '' ?>><?= e($col['name']) ?></option>
                                                         <?php endforeach; ?>
                                                     </select>
-                                                    <button type="submit" form="editTagForm<?= (int)$tg['id'] ?>" class="btn btn-sm btn-outline-primary" title="ذخیره ویرایش نام و رنگ">💾</button>
-                                                </div>
-                                            </td>
-                                            <td class="link-cell">
-                                                <div class="copy-url-group">
-                                                    <input type="text" readonly value="<?= e($fullUrl) ?>" class="form-control form-control-sm dir-ltr url-input">
-                                                    <button type="button" class="btn btn-sm btn-secondary btn-copy" data-text="<?= e($fullUrl) ?>">کپی</button>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="badge <?= ((int)$tg['claims_count'] >= $positionsCount) ? 'badge-danger' : 'badge-info' ?>">
-                                                    <?= fa_num($tg['claims_count']) ?> از <?= fa_num($positionsCount) ?> پر
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <form method="POST" action="<?= e(path_url('/admin/events/' . $event['id'] . '/tags/' . $tg['id'] . '/delete')) ?>" class="inline-form" onsubmit="return confirm('آیا از حذف این تگ اطمینان دارید؟ لینک این تگ فوراً باطل خواهد شد.');">
-                                                    <?= csrf_field() ?>
-                                                    <button type="submit" class="btn btn-sm btn-danger">حذف</button>
-                                                </form>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
+                                                </td>
+                                                <td class="link-cell">
+                                                    <div class="copy-url-group">
+                                                        <input type="text" readonly value="<?= e($fullUrl) ?>" class="form-control form-control-sm dir-ltr url-input" tabindex="-1">
+                                                        <button type="button" class="btn btn-sm btn-secondary btn-copy btn-copy-tag" data-text="<?= e($fullUrl) ?>">کپی</button>
+                                                        <button type="button" class="btn btn-sm btn-outline-primary btn-nfc-write nfc-write-only" style="display: none;" title="رایت مستقیم روی تگ NFC با همین گوشی">📲 رایت</button>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span class="badge <?= ((int)$tg['claims_count'] >= $positionsCount) ? 'badge-danger' : 'badge-info' ?>">
+                                                        <?= fa_num($tg['claims_count']) ?> از <?= fa_num($positionsCount) ?> پر
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <button type="submit" class="btn btn-sm btn-danger" formnovalidate
+                                                            formaction="<?= e(path_url('/admin/events/' . $event['id'] . '/tags/' . $tid . '/delete')) ?>"
+                                                            data-confirm="آیا از حذف تگ «<?= e($tg['name']) ?>» اطمینان دارید؟ لینک این تگ فوراً باطل می‌شود.">حذف</button>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <?php if (!empty($tags)): ?>
+                            <div class="card-footer d-flex-between p-3 sticky-save-bar">
+                                <span class="dirty-indicator text-muted">تغییری ذخیره‌نشده وجود ندارد.</span>
+                                <button type="submit" class="btn btn-primary btn-save-all">💾 ذخیره همه تغییرات تگ‌ها</button>
+                            </div>
+                        <?php endif; ?>
+                    </form>
                 </div>
             </div>
         </div>
@@ -331,7 +348,7 @@ $positionsCount = (int)$event['positions_count'];
                 </div>
             </div>
 
-            <!-- جدول تیم‌ها -->
+            <!-- جدول تیم‌ها (ویرایش گروهی با یک دکمه ذخیره) -->
             <div class="card">
                 <div class="card-header d-flex-between">
                     <div>
@@ -344,53 +361,58 @@ $positionsCount = (int)$event['positions_count'];
                     </form>
                 </div>
                 <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>شناسه</th>
-                                    <th>نام تیم</th>
-                                    <th>تعداد ثبت‌ها</th>
-                                    <th>گوشی‌های قفل‌شده</th>
-                                    <th>عملیات</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (empty($teams)): ?>
-                                    <tr><td colspan="5" class="text-center text-muted p-4">هنوز تیمی تعریف نشده است.</td></tr>
-                                <?php else: ?>
-                                    <?php foreach ($teams as $tm): ?>
-                                        <tr>
-                                            <td><?= fa_num($tm['id']) ?></td>
-                                            <td>
-                                                <form method="POST" action="<?= e(path_url('/admin/events/' . $event['id'] . '/teams/' . $tm['id'] . '/update')) ?>" class="inline-form">
-                                                    <?= csrf_field() ?>
-                                                    <input type="text" name="name" value="<?= e($tm['name']) ?>" class="form-control form-control-sm" required>
-                                                    <button type="submit" class="btn btn-sm btn-outline-primary" title="ذخیره نام">💾</button>
-                                                </form>
-                                            </td>
-                                            <td><?= fa_num($tm['claims_count']) ?> ثبت</td>
-                                            <td>
-                                                <?= fa_num($tm['devices_count']) ?> گوشی
-                                                <?php if ((int)$tm['devices_count'] > 0): ?>
-                                                    <form method="POST" action="<?= e(path_url('/admin/events/' . $event['id'] . '/teams/' . $tm['id'] . '/reset-devices')) ?>" class="inline-form" onsubmit="return confirm('گوشی‌های این تیم آزاد شوند تا بتوانند برای هر تیمی ثبت کنند؟');">
-                                                        <?= csrf_field() ?>
-                                                        <button type="submit" class="btn btn-sm btn-outline-primary" title="آزادسازی قفل گوشی‌ها">🔓 آزادسازی</button>
-                                                    </form>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td>
-                                                <form method="POST" action="<?= e(path_url('/admin/events/' . $event['id'] . '/teams/' . $tm['id'] . '/delete')) ?>" class="inline-form" onsubmit="return confirm('<?= ((int)$tm['claims_count'] > 0) ? 'هشدار: این تیم ثبت‌هایی دارد. با حذف تیم، تمام ثبت‌های آن پاک شده و رتبه تگ‌ها بازشماری می‌شود. ادامه می‌دهید؟' : 'آیا از حذف این تیم اطمینان دارید؟' ?>');">
-                                                    <?= csrf_field() ?>
-                                                    <button type="submit" class="btn btn-sm btn-danger">حذف</button>
-                                                </form>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
+                    <form id="teamsBulkForm" class="dirty-track-form" method="POST" action="<?= e(path_url('/admin/events/' . $event['id'] . '/teams/update-bulk')) ?>">
+                        <?= csrf_field() ?>
+                        <!-- دکمه پیش‌فرض فرم: Enter در کادرها «ذخیره» را اجرا می‌کند، نه حذف ردیف اول -->
+                        <button type="submit" class="default-submit-hidden" tabindex="-1" aria-hidden="true">ذخیره</button>
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>شناسه</th>
+                                        <th>نام تیم</th>
+                                        <th>تعداد ثبت‌ها</th>
+                                        <th>گوشی‌های قفل‌شده</th>
+                                        <th>عملیات</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (empty($teams)): ?>
+                                        <tr><td colspan="5" class="text-center text-muted p-4">هنوز تیمی تعریف نشده است.</td></tr>
+                                    <?php else: ?>
+                                        <?php foreach ($teams as $tm): $tmId = (int)$tm['id']; ?>
+                                            <tr>
+                                                <td><?= fa_num($tmId) ?></td>
+                                                <td>
+                                                    <input type="text" name="teams[<?= $tmId ?>][name]" value="<?= e($tm['name']) ?>" class="form-control form-control-sm" required maxlength="100">
+                                                </td>
+                                                <td><?= fa_num($tm['claims_count']) ?> ثبت</td>
+                                                <td>
+                                                    <?= fa_num($tm['devices_count']) ?> گوشی
+                                                    <?php if ((int)$tm['devices_count'] > 0): ?>
+                                                        <button type="submit" class="btn btn-sm btn-outline-primary" formnovalidate
+                                                                formaction="<?= e(path_url('/admin/events/' . $event['id'] . '/teams/' . $tmId . '/reset-devices')) ?>"
+                                                                data-confirm="گوشی‌های تیم «<?= e($tm['name']) ?>» آزاد شوند تا بتوانند برای هر تیمی ثبت کنند؟">🔓 آزادسازی</button>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <button type="submit" class="btn btn-sm btn-danger" formnovalidate
+                                                            formaction="<?= e(path_url('/admin/events/' . $event['id'] . '/teams/' . $tmId . '/delete')) ?>"
+                                                            data-confirm="<?= ((int)$tm['claims_count'] > 0) ? 'هشدار: تیم «' . e($tm['name']) . '» ثبت‌هایی دارد. با حذف تیم، تمام ثبت‌های آن پاک شده و رتبه تگ‌ها بازشماری می‌شود. ادامه می‌دهید؟' : 'آیا از حذف تیم «' . e($tm['name']) . '» اطمینان دارید؟' ?>">حذف</button>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <?php if (!empty($teams)): ?>
+                            <div class="card-footer d-flex-between p-3 sticky-save-bar">
+                                <span class="dirty-indicator text-muted">تغییری ذخیره‌نشده وجود ندارد.</span>
+                                <button type="submit" class="btn btn-primary btn-save-all">💾 ذخیره همه تغییرات تیم‌ها</button>
+                            </div>
+                        <?php endif; ?>
+                    </form>
                 </div>
             </div>
         </div>

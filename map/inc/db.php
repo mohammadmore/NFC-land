@@ -399,7 +399,7 @@ function ensure_database_schema($pdo, $driver) {
                 $code = rtrim(strtr(base64_encode(random_bytes(16)), '+/', '-_'), '=');
                 $insTag->execute([
                     'eid' => $eventId,
-                    'name' => "تگ شماره {$i}",
+                    'name' => 'تگ شماره ' . str_replace(['1', '2', '3'], ['۱', '۲', '۳'], (string)$i),
                     'cid' => $firstColorId,
                     'code' => $code,
                     'created' => $nowUtc,

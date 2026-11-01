@@ -18,9 +18,8 @@ function handle_scan_request($pdo, $code) {
 
     // بررسی محدودیت نرخ درخواست‌های با کد نامعتبر (حداکثر ۶۰ تلاش در ۱۰ دقیقه) پیش از هر پردازشی
     if (!check_rate_limit($pdo, 'invalid_scan', $ip, 60, 600)) {
-        http_response_code(429);
         header('Retry-After: 600');
-        die('تعداد درخواست‌های نامعتبر شما بیش از حد مجاز است. لطفاً چند دقیقه دیگر صبر کنید.');
+        show_message_page(429, 'درخواست‌های بیش از حد', 'تعداد درخواست‌های نامعتبر از این شبکه بیش از حد مجاز است. لطفاً چند دقیقه دیگر دوباره تگ را اسکن کنید.', '⏱️');
     }
 
     // اعتبارسنجی اولیه فرمت کد: دقیقا ۲۲ کاراکتر مجاز base64url
@@ -67,7 +66,6 @@ function handle_scan_request($pdo, $code) {
     $colorHex = normalize_hex($tag['color_hex'], '#eab308');
     $boardUrl = ((int)$tag['public_board'] === 1 && !empty($tag['board_token'])) ? path_url('/board/' . $tag['board_token']) : null;
     $palette = get_tag_color_palette($colorHex);
-    $motivationQuote = function_exists('get_random_motivation_message') ? get_random_motivation_message() : '';
 
     // ۱. بررسی فعال بودن رویداد
     if ((int)$tag['is_active'] === 0) {
@@ -75,7 +73,6 @@ function handle_scan_request($pdo, $code) {
             'page_title' => 'رویداد غیرفعال است',
             'tag' => $tag,
             'palette' => $palette,
-            'motivation_quote' => $motivationQuote,
             'is_inactive' => true,
             'status_message' => 'این رویداد در حال حاضر فعال نیست.',
             'status_type' => 'warning',
@@ -102,6 +99,7 @@ function handle_scan_request($pdo, $code) {
 
     // دریافت پیام نتیجه قبلی از Flash (در صورت وجود)
     $flashStatus = flash_get('scan_status');
+    $justClaimed = !empty($flashStatus) && isset($flashStatus['type']) && $flashStatus['type'] === 'success';
 
     // دریافت لیست تیم‌های رویداد برای انتخاب در منو
     $teamsStmt = $pdo->prepare('
@@ -119,16 +117,34 @@ function handle_scan_request($pdo, $code) {
         $lockedTeam = get_device_lock($pdo, $tag['event_id'], get_device_id(true));
     }
 
+    // تیم این گوشی (قفل‌شده یا آخرین تیمی که از این گوشی ثبت کرده) و ثبت قبلی آن روی همین تگ
+    $myTeamId = $lockedTeam ? (int)$lockedTeam['team_id'] : get_session_team((int)$tag['event_id']);
+    $myClaim = null;
+    if ($myTeamId) {
+        $mcStmt = $pdo->prepare('
+            SELECT cl.`rank` AS claim_rank, tm.name AS team_name, COALESCE(cp.points, 0) AS points
+            FROM claims cl
+            INNER JOIN teams tm ON tm.id = cl.team_id
+            LEFT JOIN color_points cp ON cp.color_id = :color_id AND cp.`rank` = cl.`rank`
+            WHERE cl.tag_id = :tag_id AND cl.team_id = :team_id
+            LIMIT 1
+        ');
+        $mcStmt->execute(['color_id' => (int)$tag['color_id'], 'tag_id' => $tag['tag_id'], 'team_id' => $myTeamId]);
+        $myClaim = $mcStmt->fetch() ?: null;
+        $mcStmt->closeCursor();
+    }
+
     render_view('scan', [
         'page_title' => 'اسکن تگ - ' . e($tag['tag_name']),
         'tag' => $tag,
         'palette' => $palette,
-        'motivation_quote' => $motivationQuote,
         'teams' => $teams,
+        'just_claimed' => $justClaimed,
+        'my_claim' => $myClaim,
         'claims_count' => $claimsCount,
         'positions_count' => $positionsCount,
         'is_full' => $isFull,
-        'can_claim' => (!$isFull),
+        'can_claim' => (!$isFull && !$myClaim && !$justClaimed),
         'flash_status' => $flashStatus,
         'board_url' => $boardUrl,
         'locked_team' => $lockedTeam,
@@ -144,9 +160,18 @@ function handle_scan_request($pdo, $code) {
  * @param array $tag
  */
 function handle_claim_submission($pdo, $tag) {
-    require_csrf();
-
     $code = $tag['code'];
+
+    // فرم منقضی‌شده (باز ماندن طولانی صفحه): بازگشت به صفحه تگ با پیام قابل فهم به جای صفحه خطا
+    if (!csrf_verify()) {
+        flash_set('scan_status', [
+            'type' => 'warning',
+            'message' => 'صفحه مدت زیادی باز مانده بود و ثبت انجام نشد. لطفاً دوباره تیم خود را انتخاب و ثبت کنید.',
+        ]);
+        header('Location: ' . path_url('/' . $code));
+        exit;
+    }
+
     $tagId = (int)$tag['tag_id'];
     $eventId = (int)$tag['event_id'];
     $positionsCount = (int)$tag['positions_count'];
@@ -230,7 +255,7 @@ function handle_claim_submission($pdo, $tag) {
                 $pdo->rollBack();
                 flash_set('scan_status', [
                     'type' => 'error',
-                    'message' => 'این گوشی قبلاً برای تیم «' . $lock['team_name'] . '» ثبت کرده و فقط برای همان تیم می‌تواند ثبت کند. در صورت اشتباه به برگزارکننده مراجعه کنید.',
+                    'message' => 'این گوشی قبلاً برای «' . $lock['team_name'] . '» ثبت کرده و فقط برای همان تیم می‌تواند ثبت کند. در صورت اشتباه به برگزارکننده مراجعه کنید.',
                 ]);
                 header('Location: ' . path_url('/' . $code));
                 exit;
@@ -262,6 +287,8 @@ function handle_claim_submission($pdo, $tag) {
         $dupStmt->closeCursor();
         if ($dupRow) {
             $pdo->rollBack();
+            // تیم این گوشی مشخص شد؛ در اسکن‌های بعدی وضعیت «تیم شما ثبت کرده» نمایش داده می‌شود
+            set_session_team($eventId, $teamId);
             flash_set('scan_status', [
                 'type' => 'error',
                 'message' => 'این تگ قبلاً توسط تیم شما ثبت شده است.',
@@ -286,6 +313,9 @@ function handle_claim_submission($pdo, $tag) {
         ]);
 
         $pdo->commit();
+
+        // به خاطر سپردن تیم این گوشی برای نمایش وضعیت «تیم شما این تگ را ثبت کرده» در اسکن‌های بعدی
+        set_session_team($eventId, $teamId);
 
         // ۶. محاسبه امتیاز کسب‌شده برای نمایش به اسکن‌کننده
         $earnedPoints = 0;
