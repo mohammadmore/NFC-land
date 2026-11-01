@@ -16,7 +16,7 @@ function sanitize_csv_cell($value) {
         return '';
     }
     $firstChar = $str[0];
-    if (in_array($firstChar, ['=', '+', '-', '@'], true)) {
+    if (in_array($firstChar, ['=', '+', '-', '@', "\t", "\r"], true)) {
         return "'" . $str;
     }
     return $str;
@@ -113,14 +113,14 @@ function export_claims_csv($pdo, $eventId) {
             tm.name AS team_name,
             tg.name AS tag_name,
             COALESCE(c.name, 'بدون رنگ') AS color_name,
-            cl.rank AS claim_rank,
+            cl.`rank` AS claim_rank,
             COALESCE(cp.points, 0) AS points,
             cl.created_at AS claim_time
         FROM claims cl
         INNER JOIN tags tg ON tg.id = cl.tag_id
         INNER JOIN teams tm ON tm.id = cl.team_id
         LEFT JOIN colors c ON c.id = tg.color_id
-        LEFT JOIN color_points cp ON cp.color_id = tg.color_id AND cp.rank = cl.rank
+        LEFT JOIN color_points cp ON cp.color_id = tg.color_id AND cp.`rank` = cl.`rank`
         WHERE tg.event_id = :event_id
         ORDER BY cl.created_at DESC, cl.id DESC
     ";

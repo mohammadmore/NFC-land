@@ -16,16 +16,17 @@ if (!defined('APP_INIT')) {
 function handle_scan_request($pdo, $code) {
     $ip = get_client_ip();
 
+    // بررسی محدودیت نرخ درخواست‌های با کد نامعتبر (حداکثر ۶۰ تلاش در ۱۰ دقیقه) پیش از هر پردازشی
+    if (!check_rate_limit($pdo, 'invalid_scan', $ip, 60, 600)) {
+        http_response_code(429);
+        header('Retry-After: 600');
+        die('تعداد درخواست‌های نامعتبر شما بیش از حد مجاز است. لطفاً چند دقیقه دیگر صبر کنید.');
+    }
+
     // اعتبارسنجی اولیه فرمت کد: دقیقا ۲۲ کاراکتر مجاز base64url
     if (!preg_match('/^[A-Za-z0-9_-]{22}$/', $code)) {
         record_rate_limit($pdo, 'invalid_scan', $ip);
         show_404();
-    }
-
-    // بررسی محدودیت نرخ درخواست‌های با کد نامعتبر (حداکثر ۶۰ تلاش در ۱۰ دقیقه)
-    if (!check_rate_limit($pdo, 'invalid_scan', $ip, 60, 600)) {
-        http_response_code(429);
-        die('تعداد درخواست‌های نامعتبر شما بیش از حد مجاز است. لطفاً چند دقیقه دیگر صبر کنید.');
     }
 
     // بازیابی تگ و رویداد متناظر
@@ -43,7 +44,9 @@ function handle_scan_request($pdo, $code) {
             e.show_result_to_scanner,
             e.is_active,
             e.logo_path,
-            e.logo_tint_mode
+            e.logo_tint_mode,
+            e.public_board,
+            e.board_token
         FROM tags t
         INNER JOIN events e ON e.id = t.event_id
         LEFT JOIN colors c ON c.id = t.color_id
@@ -52,6 +55,7 @@ function handle_scan_request($pdo, $code) {
     ');
     $stmt->execute(['code' => $code]);
     $tag = $stmt->fetch();
+    $stmt->closeCursor();
 
     if (!$tag) {
         // کد در دیتابیس موجود نیست: ثبت به عنوان درخواست نامعتبر و نمایش ۴۰۴ یکسان
@@ -59,7 +63,8 @@ function handle_scan_request($pdo, $code) {
         show_404();
     }
 
-    $colorHex = !empty($tag['color_hex']) ? $tag['color_hex'] : '#eab308';
+    $colorHex = normalize_hex($tag['color_hex'], '#eab308');
+    $boardUrl = ((int)$tag['public_board'] === 1 && !empty($tag['board_token'])) ? path_url('/board/' . $tag['board_token']) : null;
     $palette = get_tag_color_palette($colorHex);
     $motivationQuote = function_exists('get_random_motivation_message') ? get_random_motivation_message() : '';
 
@@ -74,6 +79,7 @@ function handle_scan_request($pdo, $code) {
             'status_message' => 'این رویداد در حال حاضر فعال نیست.',
             'status_type' => 'warning',
             'can_claim' => false,
+            'board_url' => $boardUrl,
         ]);
         exit;
     }
@@ -117,6 +123,7 @@ function handle_scan_request($pdo, $code) {
         'is_full' => $isFull,
         'can_claim' => (!$isFull),
         'flash_status' => $flashStatus,
+        'board_url' => $boardUrl,
     ]);
     exit;
 }
@@ -135,6 +142,21 @@ function handle_claim_submission($pdo, $tag) {
     $eventId = (int)$tag['event_id'];
     $positionsCount = (int)$tag['positions_count'];
 
+    // محدودیت نرخ ثبت: جلوگیری از ثبت انبوه خودکار از یک دستگاه/شبکه
+    // (سقف شبکه بالاست چون معمولاً همه شرکت‌کنندگان پشت یک وای‌فای مشترک هستند)
+    $ip = get_client_ip();
+    $sessKey = session_id() !== '' ? session_id() : $ip;
+    if (!check_rate_limit($pdo, 'claim_sess', $sessKey, 30, 600) || !check_rate_limit($pdo, 'claim_ip', $ip, 300, 600)) {
+        flash_set('scan_status', [
+            'type' => 'error',
+            'message' => 'تعداد ثبت‌های شما در چند دقیقه اخیر بیش از حد مجاز است. لطفاً کمی صبر کنید.',
+        ]);
+        header('Location: ' . path_url('/' . $code));
+        exit;
+    }
+    record_rate_limit($pdo, 'claim_sess', $sessKey);
+    record_rate_limit($pdo, 'claim_ip', $ip);
+
     $teamId = isset($_POST['team_id']) ? (int)$_POST['team_id'] : 0;
     if ($teamId <= 0) {
         flash_set('scan_status', [
@@ -149,6 +171,7 @@ function handle_claim_submission($pdo, $tag) {
     $teamStmt = $pdo->prepare('SELECT id, name FROM teams WHERE id = :id AND event_id = :event_id LIMIT 1');
     $teamStmt->execute(['id' => $teamId, 'event_id' => $eventId]);
     $team = $teamStmt->fetch();
+    $teamStmt->closeCursor();
     if (!$team) {
         flash_set('scan_status', [
             'type' => 'error',
@@ -162,21 +185,19 @@ function handle_claim_submission($pdo, $tag) {
     try {
         $pdo->beginTransaction();
 
-        // ۱. قفل ردیف تگ در MySQL برای جلوگیری از Race Condition (در SQLite تراکنش فایل را قفل می‌کند)
-        $isMysql = (strpos($pdo->getAttribute(PDO::ATTR_DRIVER_NAME), 'mysql') !== false);
-        if ($isMysql) {
-            $lockStmt = $pdo->prepare('SELECT id, color_id FROM tags WHERE id = :id FOR UPDATE');
-            $lockStmt->execute(['id' => $tagId]);
-            $lockedTag = $lockStmt->fetch();
-            $colorId = $lockedTag ? $lockedTag['color_id'] : $tag['color_id'];
-        } else {
-            $colorId = $tag['color_id'];
+        // ۱. قفل نوشتن روی تگ برای جلوگیری از Race Condition (MySQL: FOR UPDATE / SQLite: قفل نوشتن فوری)
+        $lockedTag = lock_tag_row($pdo, $tagId);
+        if (!$lockedTag) {
+            $pdo->rollBack();
+            show_404();
         }
+        $colorId = $lockedTag['color_id'];
 
         // ۲. شمارش ثبت‌های قبلی تگ
         $cntStmt = $pdo->prepare('SELECT COUNT(*) as cnt FROM claims WHERE tag_id = :tag_id');
         $cntStmt->execute(['tag_id' => $tagId]);
         $cntRow = $cntStmt->fetch();
+        $cntStmt->closeCursor();
         $currentClaims = (int)$cntRow['cnt'];
 
         // ۳. بررسی پر بودن ظرفیت ثبت‌های تگ
@@ -193,7 +214,9 @@ function handle_claim_submission($pdo, $tag) {
         // ۴. بررسی آیا این تیم قبلاً تگ را ثبت کرده است
         $dupStmt = $pdo->prepare('SELECT id FROM claims WHERE tag_id = :tag_id AND team_id = :team_id LIMIT 1');
         $dupStmt->execute(['tag_id' => $tagId, 'team_id' => $teamId]);
-        if ($dupStmt->fetch()) {
+        $dupRow = $dupStmt->fetch();
+        $dupStmt->closeCursor();
+        if ($dupRow) {
             $pdo->rollBack();
             flash_set('scan_status', [
                 'type' => 'error',
@@ -208,7 +231,7 @@ function handle_claim_submission($pdo, $tag) {
         $nowUtc = gmdate('Y-m-d H:i:s');
 
         $insStmt = $pdo->prepare('
-            INSERT INTO claims (tag_id, team_id, rank, created_at) 
+            INSERT INTO claims (tag_id, team_id, `rank`, created_at) 
             VALUES (:tag_id, :team_id, :rank, :created_at)
         ');
         $insStmt->execute([
@@ -226,7 +249,7 @@ function handle_claim_submission($pdo, $tag) {
             $ptsStmt = $pdo->prepare('
                 SELECT points 
                 FROM color_points 
-                WHERE color_id = :color_id AND rank = :rank 
+                WHERE color_id = :color_id AND `rank` = :rank 
                 LIMIT 1
             ');
             $ptsStmt->execute([

@@ -1298,3 +1298,35 @@ body.modal-open {
     margin-bottom: 1rem;
     min-height: 40px;
 }
+
+/* ==========================================================================
+   Utilities (added)
+   ========================================================================== */
+.d-block { display: block; }
+
+/* ==========================================================================
+   Public Live Leaderboard (/board/<token>)
+   ========================================================================== */
+.board-wrapper { max-width: 900px; margin: 0 auto; }
+.board-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.board-title { font-size: 1.5rem; margin: 0; }
+.board-event-name { color: #475569; font-weight: 600; margin-top: 0.25rem; }
+.board-live { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; color: #15803d; font-weight: 600; }
+.board-live-dot { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6); animation: boardPulse 1.8s infinite; }
+@keyframes boardPulse {
+    0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6); }
+    70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+.board-table td, .board-table th { font-size: 1.05rem; vertical-align: middle; }
+.board-rank { font-size: 1.3rem; }
+.board-top-1 { background: #fffbeb; }
+.board-top-2 { background: #f8fafc; }
+.board-top-3 { background: #fff7ed; }
+@media (min-width: 1200px) {
+    .is-board-view .board-wrapper { max-width: 1100px; }
+    .is-board-view .board-table td, .is-board-view .board-table th { font-size: 1.35rem; padding-top: 0.9rem; padding-bottom: 0.9rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .board-live-dot { animation: none; }
+}

@@ -8,10 +8,17 @@ define('APP_INIT', true);
 // اصلاح و تنظیم خودکار دسترسی پوشه‌ها (755) و فایل‌ها (644) به صورت سیستمی در اولین اجرا
 if (!file_exists(__DIR__ . '/data/.perms_fixed')) {
     if (!is_dir(__DIR__ . '/data')) {
-        @mkdir(__DIR__ . '/data', 0777, true);
+        @mkdir(__DIR__ . '/data', 0755, true);
     }
     @chmod(__DIR__, 0755);
-    @chmod(__DIR__ . '/data', 0777);
+    // پوشه data فقط در صورت نیاز (هاست‌های mod_php) دسترسی نوشتن بازتر می‌گیرد
+    if (!is_writable(__DIR__ . '/data')) {
+        @chmod(__DIR__ . '/data', 0775);
+        clearstatcache();
+        if (!is_writable(__DIR__ . '/data')) {
+            @chmod(__DIR__ . '/data', 0777);
+        }
+    }
     @chmod(__DIR__ . '/inc', 0755);
     @chmod(__DIR__ . '/views', 0755);
     @chmod(__DIR__ . '/assets', 0755);
@@ -29,9 +36,6 @@ if (!file_exists(__DIR__ . '/data/.perms_fixed')) {
                 @chmod($f, 0644);
             }
         }
-    }
-    if (file_exists(__DIR__ . '/data/database.sqlite')) {
-        @chmod(__DIR__ . '/data/database.sqlite', 0666);
     }
     @file_put_contents(__DIR__ . '/data/.perms_fixed', '1');
 }
@@ -86,7 +90,9 @@ set_exception_handler(function($e) {
         <div class="box">
             <h2>⚠️ خطایی در پردازش اطلاعات رخ داد</h2>
             <p>درخواست شما با خطا مواجه شد. لطفاً به صفحه قبل بازگردید یا دسترسی پوشه داده‌ها (data) را بررسی کنید.</p>
-            <div class="details"><?= htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') ?></div>
+            <?php if (defined('APP_DEBUG') && APP_DEBUG): ?>
+                <div class="details"><?= htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') ?></div>
+            <?php endif; ?>
             <a href="javascript:history.back()" class="btn">← بازگشت به صفحه قبلی</a>
         </div>
     </body>
@@ -119,9 +125,9 @@ $pdo = get_db();
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $basePath = defined('BASE_PATH') ? trim(BASE_PATH, '/') : 'map';
 
-// حذف BASE_PATH از ابتدای مسیر درخواستی
-$uri = trim($requestUri, '/');
-if ($basePath !== '' && strpos($uri, $basePath) === 0) {
+// حذف BASE_PATH از ابتدای مسیر درخواستی (فقط اگر دقیقاً یک بخش کامل از مسیر باشد)
+$uri = trim((string)$requestUri, '/');
+if ($basePath !== '' && ($uri === $basePath || strpos($uri, $basePath . '/') === 0)) {
     $uri = trim(substr($uri, strlen($basePath)), '/');
 }
 
@@ -133,7 +139,41 @@ if ($uri === '') {
 // ==============================================================================
 // مسیرهای پنل مدیریت (/admin/...)
 // ==============================================================================
-if (strpos($uri, 'admin') === 0) {
+// ==============================================================================
+// لیدربورد عمومی (/board/<token>) - فقط در صورت فعال بودن توسط ادمین
+// ==============================================================================
+if (preg_match('#^board/([A-Za-z0-9_-]{22})(/data)?$#', $uri, $bMatch)) {
+    $bStmt = $pdo->prepare('SELECT id, name, logo_path, public_board, board_token FROM events WHERE board_token = :t LIMIT 1');
+    $bStmt->execute(['t' => $bMatch[1]]);
+    $bEvent = $bStmt->fetch();
+    $bStmt->closeCursor();
+    if (!$bEvent || (int)$bEvent['public_board'] !== 1 || !hash_equals((string)$bEvent['board_token'], $bMatch[1])) {
+        show_404();
+    }
+    $board = get_public_leaderboard($pdo, (int)$bEvent['id']);
+    if (!empty($bMatch[2])) {
+        $out = [];
+        foreach ($board as $row) {
+            $out[] = [
+                'rank' => $row['rank'],
+                'rank_fa' => fa_num($row['rank']),
+                'team' => $row['team'],
+                'points_fa' => fa_num($row['points']),
+                'tags_fa' => fa_num($row['tags']),
+            ];
+        }
+        list($jd, $jt) = get_jalali_date_time_parts(gmdate('Y-m-d H:i:s'));
+        json_response(['success' => true, 'rows' => $out, 'updated_fa' => fa_num($jt)]);
+    }
+    render_view('board', [
+        'page_title' => 'جدول رده‌بندی - ' . $bEvent['name'],
+        'board_event' => $bEvent,
+        'board' => $board,
+    ]);
+    exit;
+}
+
+if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
     $adminPath = trim(substr($uri, 5), '/'); // پس از 'admin'
 
     // ۱. صفحه ورود (/admin/login)
@@ -173,7 +213,8 @@ if (strpos($uri, 'admin') === 0) {
     }
 
     // از اینجا به بعد تمام بخش‌های ادمین نیازمند لاگین هستند
-    require_admin();
+    // (صفحه تغییر رمز حتی در حالت «تغییر رمز اجباری» قابل دسترسی است)
+    require_admin($adminPath === 'password');
 
     // ریدایرکت /admin به /admin/events
     if ($adminPath === '') {
@@ -234,7 +275,7 @@ if (strpos($uri, 'admin') === 0) {
     // ۵. ایجاد رویداد جدید (/admin/events/create)
     if ($adminPath === 'events/create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         require_csrf();
-        $name = isset($_POST['name']) ? trim($_POST['name']) : '';
+        $name = isset($_POST['name']) ? str_limit_u($_POST['name'], 150) : '';
         $positionsCount = isset($_POST['positions_count']) ? (int)$_POST['positions_count'] : 4;
         if ($positionsCount < 1) $positionsCount = 1;
         if ($positionsCount > 10) $positionsCount = 10;
@@ -248,10 +289,11 @@ if (strpos($uri, 'admin') === 0) {
         }
 
         $stmt = $pdo->prepare('
-            INSERT INTO events (name, positions_count, show_result_to_scanner, is_active, created_at)
-            VALUES (:name, :positions, :show_res, :active, :created)
+            INSERT INTO events (name, positions_count, show_result_to_scanner, is_active, public_board, board_token, created_at)
+            VALUES (:name, :positions, :show_res, :active, 0, :token, :created)
         ');
         $stmt->execute([
+            'token' => generate_board_token(),
             'name' => $name,
             'positions' => $positionsCount,
             'show_res' => $showResult,
@@ -274,6 +316,7 @@ if (strpos($uri, 'admin') === 0) {
         $evStmt = $pdo->prepare('SELECT * FROM events WHERE id = :id LIMIT 1');
         $evStmt->execute(['id' => $eventId]);
         $event = $evStmt->fetch();
+        $evStmt->closeCursor();
         if (!$event) {
             show_404();
         }
@@ -298,6 +341,7 @@ if (strpos($uri, 'admin') === 0) {
             require_csrf();
             $delStmt = $pdo->prepare('DELETE FROM events WHERE id = :id');
             $delStmt->execute(['id' => $eventId]);
+            delete_logo_file($event['logo_path']);
             flash_set('success', 'رویداد و کلیه اطلاعات مربوطه حذف شدند.', 'success');
             header('Location: ' . path_url('/admin/events'));
             exit;
@@ -316,22 +360,31 @@ if (strpos($uri, 'admin') === 0) {
         // ۶.۳. به‌روزرسانی تنظیمات رویداد
         if ($subAction === 'settings/update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             require_csrf();
-            $name = isset($_POST['name']) ? trim($_POST['name']) : '';
+            $name = isset($_POST['name']) ? str_limit_u($_POST['name'], 150) : '';
             $newPositions = isset($_POST['positions_count']) ? (int)$_POST['positions_count'] : 4;
             if ($newPositions < 1) $newPositions = 1;
             if ($newPositions > 10) $newPositions = 10;
             $showResult = !empty($_POST['show_result_to_scanner']) ? 1 : 0;
             $isActive = !empty($_POST['is_active']) ? 1 : 0;
+            $logoTintMode = !empty($_POST['logo_tint_mode']) ? 1 : 0;
+            $publicBoard = !empty($_POST['public_board']) ? 1 : 0;
+
+            if ($name === '') {
+                flash_set('error', 'نام رویداد نمی‌تواند خالی باشد.', 'error');
+                header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=settings'));
+                exit;
+            }
 
             // اعتبارسنجی: کاهش به عددی کمتر از بیشترین rank ثبت‌شده مجاز نیست
             $maxRankStmt = $pdo->prepare('
-                SELECT COALESCE(MAX(cl.rank), 0) AS max_rank 
+                SELECT COALESCE(MAX(cl.`rank`), 0) AS max_rank 
                 FROM claims cl 
                 INNER JOIN tags tg ON tg.id = cl.tag_id 
                 WHERE tg.event_id = :event_id
             ');
             $maxRankStmt->execute(['event_id' => $eventId]);
             $maxRank = (int)$maxRankStmt->fetch()['max_rank'];
+            $maxRankStmt->closeCursor();
 
             if ($newPositions < $maxRank) {
                 flash_set('error', 'امکان کاهش تعداد جایگاه‌ها به کمتر از ' . fa_num($maxRank) . ' وجود ندارد، زیرا قبلاً ثبتی در این رتبه انجام شده است.', 'error');
@@ -339,61 +392,26 @@ if (strpos($uri, 'admin') === 0) {
                 exit;
             }
 
-            // دریافت اطلاعات فعلی رویداد و مسیر لوگو
-            $evStmt = $pdo->prepare('SELECT logo_path FROM events WHERE id = :id');
-            $evStmt->execute(['id' => $eventId]);
-            $currentEv = $evStmt->fetch();
-            $currentLogo = $currentEv ? $currentEv['logo_path'] : null;
-
+            $currentLogo = $event['logo_path'];
             $newLogoPath = $currentLogo;
-            $logoTintMode = isset($_POST['logo_tint_mode']) ? (int)$_POST['logo_tint_mode'] : 1;
 
-            // حذف لوگوی قبلی در صورت درخواست
-            if (!empty($_POST['delete_logo'])) {
-                if ($currentLogo && file_exists(__DIR__ . '/' . $currentLogo)) {
-                    @unlink(__DIR__ . '/' . $currentLogo);
-                }
+            // پردازش آپلود لوگوی جدید
+            $upload = isset($_FILES['logo']) ? store_uploaded_logo($_FILES['logo'], $eventId) : ['ok' => false, 'error' => null];
+            if ($upload['ok']) {
+                $newLogoPath = $upload['path'];
+            } elseif (!empty($upload['error'])) {
+                flash_set('warning', $upload['error'], 'warning');
+            } elseif (!empty($_POST['delete_logo'])) {
+                // حذف لوگوی قبلی در صورت درخواست (و نبود لوگوی جدید)
                 $newLogoPath = null;
             }
 
-            // پردازش آپلود لوگوی جدید
-            if (isset($_FILES['logo']) && $_FILES['logo']['error'] === UPLOAD_ERR_OK) {
-                $file = $_FILES['logo'];
-                $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-                $allowedExts = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
-
-                if (in_array($ext, $allowedExts, true)) {
-                    if ($file['size'] <= 3 * 1024 * 1024) { // حداکثر ۳ مگابایت
-                        $uploadDir = __DIR__ . '/assets/uploads';
-                        if (!is_dir($uploadDir)) {
-                            @mkdir($uploadDir, 0755, true);
-                        }
-                        @chmod($uploadDir, 0755);
-
-                        $randomToken = bin2hex(random_bytes(8));
-                        $filename = 'logo_' . $eventId . '_' . $randomToken . '.' . $ext;
-                        $destination = $uploadDir . '/' . $filename;
-
-                        if (move_uploaded_file($file['tmp_name'], $destination)) {
-                            @chmod($destination, 0644);
-                            if ($currentLogo && file_exists(__DIR__ . '/' . $currentLogo)) {
-                                @unlink(__DIR__ . '/' . $currentLogo);
-                            }
-                            $newLogoPath = 'assets/uploads/' . $filename;
-                        } else {
-                            flash_set('warning', 'خطا در ذخیره فایل لوگو. لطفاً مجوز نوشتن پوشه assets/uploads را بررسی کنید.', 'warning');
-                        }
-                    } else {
-                        flash_set('warning', 'حجم فایل لوگو نباید بیش از ۳ مگابایت باشد.', 'warning');
-                    }
-                } else {
-                    flash_set('warning', 'فرمت فایل لوگو نامعتبر است. فقط PNG، SVG، JPG و WEBP مجاز هستند.', 'warning');
-                }
-            }
+            $boardToken = !empty($event['board_token']) ? $event['board_token'] : generate_board_token();
 
             $upStmt = $pdo->prepare('
                 UPDATE events 
-                SET name = :name, positions_count = :positions, show_result_to_scanner = :show_res, is_active = :active, logo_path = :logo_path, logo_tint_mode = :tint_mode
+                SET name = :name, positions_count = :positions, show_result_to_scanner = :show_res, is_active = :active,
+                    logo_path = :logo_path, logo_tint_mode = :tint_mode, public_board = :public_board, board_token = :board_token
                 WHERE id = :id
             ');
             $upStmt->execute([
@@ -403,10 +421,30 @@ if (strpos($uri, 'admin') === 0) {
                 'active' => $isActive,
                 'logo_path' => $newLogoPath,
                 'tint_mode' => $logoTintMode,
+                'public_board' => $publicBoard,
+                'board_token' => $boardToken,
                 'id' => $eventId,
             ]);
 
-            flash_set('success', 'تنظیمات رویداد و لوگوی سازمان با موفقیت ذخیره شد.', 'success');
+            if ($newLogoPath !== $currentLogo) {
+                delete_logo_file($currentLogo);
+            }
+
+            // ساخت ردیف‌های امتیاز برای جایگاه‌های تازه اضافه‌شده
+            if ($newPositions > (int)$event['positions_count']) {
+                seed_color_points($pdo, $eventId, $newPositions);
+            }
+
+            flash_set('success', 'تنظیمات رویداد با موفقیت ذخیره شد.', 'success');
+            header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=settings'));
+            exit;
+        }
+
+        // ۶.۳.۱. ساخت لینک جدید برای لیدربورد عمومی (لینک قبلی باطل می‌شود)
+        if ($subAction === 'board/regenerate' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+            require_csrf();
+            $pdo->prepare('UPDATE events SET board_token = :t WHERE id = :id')->execute(['t' => generate_board_token(), 'id' => $eventId]);
+            flash_set('success', 'لینک جدید لیدربورد عمومی ساخته شد و لینک قبلی دیگر کار نمی‌کند.', 'success');
             header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=settings'));
             exit;
         }
@@ -414,8 +452,8 @@ if (strpos($uri, 'admin') === 0) {
         // ۶.۴. افزودن رنگ جدید
         if ($subAction === 'colors/create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             require_csrf();
-            $cName = isset($_POST['name']) ? trim($_POST['name']) : '';
-            $cHex = isset($_POST['hex']) ? trim($_POST['hex']) : '#ef4444';
+            $cName = isset($_POST['name']) ? str_limit_u($_POST['name'], 50) : '';
+            $cHex = normalize_hex(isset($_POST['hex']) ? $_POST['hex'] : '', '#ef4444');
             $sortOrder = isset($_POST['sort_order']) ? (int)$_POST['sort_order'] : 0;
 
             if ($cName !== '') {
@@ -429,31 +467,33 @@ if (strpos($uri, 'admin') === 0) {
                 $newColorId = (int)$pdo->lastInsertId();
 
                 // افزودن پیش‌فرض ردیف‌های امتیاز صفر
-                $insPt = $pdo->prepare('INSERT INTO color_points (color_id, rank, points) VALUES (:cid, :rank, 0)');
+                $insPt = $pdo->prepare('INSERT INTO color_points (color_id, `rank`, points) VALUES (:cid, :rank, 0)');
                 for ($r = 1; $r <= (int)$event['positions_count']; $r++) {
                     $insPt->execute(['cid' => $newColorId, 'rank' => $r]);
                 }
 
                 flash_set('success', 'رنگ جدید اضافه شد.', 'success');
+            } else {
+                flash_set('error', 'نام رنگ نمی‌تواند خالی باشد.', 'error');
             }
             header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=colors'));
             exit;
         }
 
         // ۶.۵. حذف رنگ
-        if (preg_match('#^colors/(\d+)/delete$#', $subAction, $cMatch)) {
+        if (preg_match('#^colors/(\d+)/delete$#', $subAction, $cMatch) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+            require_csrf();
             $delColorId = (int)$cMatch[1];
-            // اعتبارسنجی CSRF
-            $token = isset($_GET['csrf_token']) ? $_GET['csrf_token'] : (isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '');
-            if (!csrf_verify($token)) {
-                die('خطای اعتبارسنجی CSRF');
-            }
 
             // رنگ حذف شود (کلید خارجی تگ‌ها ON DELETE SET NULL است)
             $delStmt = $pdo->prepare('DELETE FROM colors WHERE id = :id AND event_id = :eid');
             $delStmt->execute(['id' => $delColorId, 'eid' => $eventId]);
 
-            flash_set('warning', 'رنگ حذف شد و تگ‌های آن بدون رنگ شدند.', 'warning');
+            if ($delStmt->rowCount() > 0) {
+                flash_set('warning', 'رنگ حذف شد و تگ‌های آن بدون رنگ شدند.', 'warning');
+            } else {
+                flash_set('error', 'رنگ موردنظر پیدا نشد.', 'error');
+            }
             header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=colors'));
             exit;
         }
@@ -461,37 +501,64 @@ if (strpos($uri, 'admin') === 0) {
         // ۶.۶. ذخیره کل جدول ماتریس رنگ‌ها و امتیازات
         if ($subAction === 'colors/update-points' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             require_csrf();
-            $colorsData = isset($_POST['colors']) ? $_POST['colors'] : [];
-            $pointsData = isset($_POST['points']) ? $_POST['points'] : [];
+            $colorsData = (isset($_POST['colors']) && is_array($_POST['colors'])) ? $_POST['colors'] : [];
+            $pointsData = (isset($_POST['points']) && is_array($_POST['points'])) ? $_POST['points'] : [];
+            $maxPositions = (int)$event['positions_count'];
+
+            // فقط رنگ‌های متعلق به همین رویداد قابل ویرایش هستند
+            $ownStmt = $pdo->prepare('SELECT id FROM colors WHERE event_id = :eid');
+            $ownStmt->execute(['eid' => $eventId]);
+            $ownColorIds = array_map('intval', $ownStmt->fetchAll(PDO::FETCH_COLUMN));
 
             $upCol = $pdo->prepare('UPDATE colors SET name = :name, hex = :hex, sort_order = :order WHERE id = :id AND event_id = :eid');
-            foreach ($colorsData as $cid => $cItem) {
-                $upCol->execute([
-                    'name' => trim($cItem['name']),
-                    'hex' => trim($cItem['hex']),
-                    'order' => (int)$cItem['sort_order'],
-                    'id' => (int)$cid,
-                    'eid' => $eventId,
-                ]);
-            }
-
-            // به‌روزرسانی جدول color_points متناسب با درایور
-            $driver = defined('DB_DRIVER') ? DB_DRIVER : 'sqlite';
-
-            if ($driver === 'sqlite') {
-                $insOrUpPt = $pdo->prepare('INSERT OR REPLACE INTO color_points (color_id, rank, points) VALUES (:cid, :rank, :pts)');
-            } else {
+            if (db_is_mysql($pdo)) {
                 $insOrUpPt = $pdo->prepare('
-                    INSERT INTO color_points (color_id, rank, points) 
+                    INSERT INTO color_points (color_id, `rank`, points) 
                     VALUES (:cid, :rank, :pts)
                     ON DUPLICATE KEY UPDATE points = VALUES(points)
                 ');
+            } else {
+                $insOrUpPt = $pdo->prepare('INSERT OR REPLACE INTO color_points (color_id, `rank`, points) VALUES (:cid, :rank, :pts)');
             }
 
-            foreach ($pointsData as $cid => $ranks) {
-                foreach ($ranks as $rankNum => $ptsVal) {
-                    $insOrUpPt->execute(['cid' => (int)$cid, 'rank' => (int)$rankNum, 'pts' => (int)$ptsVal]);
+            $pdo->beginTransaction();
+            try {
+                foreach ($colorsData as $cid => $cItem) {
+                    $cid = (int)$cid;
+                    if (!in_array($cid, $ownColorIds, true) || !is_array($cItem)) {
+                        continue;
+                    }
+                    $cName = isset($cItem['name']) ? str_limit_u($cItem['name'], 50) : '';
+                    if ($cName === '') {
+                        continue;
+                    }
+                    $upCol->execute([
+                        'name' => $cName,
+                        'hex' => normalize_hex(isset($cItem['hex']) ? $cItem['hex'] : ''),
+                        'order' => isset($cItem['sort_order']) ? (int)$cItem['sort_order'] : 0,
+                        'id' => $cid,
+                        'eid' => $eventId,
+                    ]);
                 }
+
+                foreach ($pointsData as $cid => $ranks) {
+                    $cid = (int)$cid;
+                    if (!in_array($cid, $ownColorIds, true) || !is_array($ranks)) {
+                        continue;
+                    }
+                    foreach ($ranks as $rankNum => $ptsVal) {
+                        $rankNum = (int)$rankNum;
+                        if ($rankNum < 1 || $rankNum > $maxPositions) {
+                            continue;
+                        }
+                        $pts = max(-1000000, min(1000000, (int)$ptsVal));
+                        $insOrUpPt->execute(['cid' => $cid, 'rank' => $rankNum, 'pts' => $pts]);
+                    }
+                }
+                $pdo->commit();
+            } catch (Exception $ex) {
+                $pdo->rollBack();
+                throw $ex;
             }
 
             flash_set('success', 'جدول رنگ‌ها و امتیازات با موفقیت به‌روزرسانی شد.', 'success');
@@ -514,7 +581,7 @@ if (strpos($uri, 'admin') === 0) {
             }
 
             foreach ($lines as $line) {
-                $tName = trim($line);
+                $tName = str_limit_u($line, 100);
                 if ($tName !== '') {
                     $insTm->execute(['eid' => $eventId, 'name' => $tName]);
                     if ($insTm->rowCount() > 0) $added++;
@@ -529,7 +596,7 @@ if (strpos($uri, 'admin') === 0) {
         // ۶.۸. افزودن تک تیم
         if ($subAction === 'teams/create-single' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             require_csrf();
-            $tName = isset($_POST['name']) ? trim($_POST['name']) : '';
+            $tName = isset($_POST['name']) ? str_limit_u($_POST['name'], 100) : '';
             if ($tName !== '') {
                 try {
                     $insTm = $pdo->prepare('INSERT INTO teams (event_id, name) VALUES (:eid, :name)');
@@ -547,11 +614,17 @@ if (strpos($uri, 'admin') === 0) {
         if (preg_match('#^teams/(\d+)/update$#', $subAction, $tMatch) && $_SERVER['REQUEST_METHOD'] === 'POST') {
             require_csrf();
             $teamId = (int)$tMatch[1];
-            $tName = isset($_POST['name']) ? trim($_POST['name']) : '';
+            $tName = isset($_POST['name']) ? str_limit_u($_POST['name'], 100) : '';
             if ($tName !== '') {
-                $upTm = $pdo->prepare('UPDATE teams SET name = :name WHERE id = :id AND event_id = :eid');
-                $upTm->execute(['name' => $tName, 'id' => $teamId, 'eid' => $eventId]);
-                flash_set('success', 'نام تیم ویرایش شد.', 'success');
+                try {
+                    $upTm = $pdo->prepare('UPDATE teams SET name = :name WHERE id = :id AND event_id = :eid');
+                    $upTm->execute(['name' => $tName, 'id' => $teamId, 'eid' => $eventId]);
+                    flash_set('success', 'نام تیم ویرایش شد.', 'success');
+                } catch (PDOException $e) {
+                    flash_set('error', 'تیم دیگری با این نام در این رویداد وجود دارد.', 'error');
+                }
+            } else {
+                flash_set('error', 'نام تیم نمی‌تواند خالی باشد.', 'error');
             }
             header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=teams'));
             exit;
@@ -561,8 +634,11 @@ if (strpos($uri, 'admin') === 0) {
         if (preg_match('#^teams/(\d+)/delete$#', $subAction, $tMatch) && $_SERVER['REQUEST_METHOD'] === 'POST') {
             require_csrf();
             $teamId = (int)$tMatch[1];
-            delete_team_and_reorder($pdo, $teamId, $eventId);
-            flash_set('success', 'تیم با موفقیت حذف شد و رتبه‌های متأثر بازشماری شدند.', 'success');
+            if (delete_team_and_reorder($pdo, $teamId, $eventId)) {
+                flash_set('success', 'تیم با موفقیت حذف شد و رتبه‌های متأثر بازشماری شدند.', 'success');
+            } else {
+                flash_set('error', 'حذف تیم انجام نشد. تیم پیدا نشد یا خطایی رخ داد.', 'error');
+            }
             header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=teams'));
             exit;
         }
@@ -570,7 +646,7 @@ if (strpos($uri, 'admin') === 0) {
         // ۶.۱۱. درخواست AJAX جزئیات ثبت‌های یک تیم
         if (preg_match('#^teams/(\d+)/claims-json$#', $subAction, $tMatch)) {
             $teamId = (int)$tMatch[1];
-            $claims = get_team_claims_detail($pdo, $teamId);
+            $claims = get_team_claims_detail($pdo, $teamId, $eventId);
             $formatted = [];
             foreach ($claims as $c) {
                 $formatted[] = [
@@ -591,13 +667,14 @@ if (strpos($uri, 'admin') === 0) {
             $count = isset($_POST['count']) ? (int)$_POST['count'] : 5;
             if ($count < 1) $count = 1;
             if ($count > 50) $count = 50;
-            $prefix = isset($_POST['prefix']) ? trim($_POST['prefix']) : '';
-            $colorId = !empty($_POST['color_id']) ? (int)$_POST['color_id'] : null;
+            $prefix = isset($_POST['prefix']) ? str_limit_u($_POST['prefix'], 80) : '';
+            $colorId = valid_event_color_id($pdo, $eventId, isset($_POST['color_id']) ? $_POST['color_id'] : null);
 
-            // شمارش تگ‌های فعلی برای نام‌گذاری هوشمند
-            $curCntStmt = $pdo->prepare('SELECT COUNT(*) as cnt FROM tags WHERE event_id = :eid');
-            $curCntStmt->execute(['eid' => $eventId]);
-            $startNum = (int)$curCntStmt->fetch()['cnt'] + 1;
+            // نام‌های موجود برای جلوگیری از ساخت نام تکراری (حتی پس از حذف تگ‌ها)
+            $namesStmt = $pdo->prepare('SELECT name FROM tags WHERE event_id = :eid');
+            $namesStmt->execute(['eid' => $eventId]);
+            $existingNames = array_flip($namesStmt->fetchAll(PDO::FETCH_COLUMN));
+            $baseName = ($prefix !== '') ? $prefix : 'تگ';
 
             $nowUtc = gmdate('Y-m-d H:i:s');
             $insTag = $pdo->prepare('
@@ -605,9 +682,13 @@ if (strpos($uri, 'admin') === 0) {
                 VALUES (:eid, :name, :cid, :code, :created)
             ');
 
+            $num = 0;
             for ($i = 0; $i < $count; $i++) {
-                $num = $startNum + $i;
-                $tName = ($prefix !== '') ? ($prefix . ' ' . fa_num($num)) : ('تگ ' . fa_num($num));
+                do {
+                    $num++;
+                    $tName = $baseName . ' ' . fa_num($num);
+                } while (isset($existingNames[$tName]));
+                $existingNames[$tName] = true;
                 $code = generate_unique_tag_code($pdo);
                 $insTag->execute([
                     'eid' => $eventId,
@@ -626,8 +707,8 @@ if (strpos($uri, 'admin') === 0) {
         // ۶.۱۳. افزودن تگ تکی
         if ($subAction === 'tags/create-single' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             require_csrf();
-            $tName = isset($_POST['name']) ? trim($_POST['name']) : '';
-            $colorId = !empty($_POST['color_id']) ? (int)$_POST['color_id'] : null;
+            $tName = isset($_POST['name']) ? str_limit_u($_POST['name'], 100) : '';
+            $colorId = valid_event_color_id($pdo, $eventId, isset($_POST['color_id']) ? $_POST['color_id'] : null);
 
             if ($tName !== '') {
                 $code = generate_unique_tag_code($pdo);
@@ -652,8 +733,8 @@ if (strpos($uri, 'admin') === 0) {
         if (preg_match('#^tags/(\d+)/update$#', $subAction, $tgMatch) && $_SERVER['REQUEST_METHOD'] === 'POST') {
             require_csrf();
             $tagId = (int)$tgMatch[1];
-            $tName = isset($_POST['name']) ? trim($_POST['name']) : '';
-            $colorId = !empty($_POST['color_id']) ? (int)$_POST['color_id'] : null;
+            $tName = isset($_POST['name']) ? str_limit_u($_POST['name'], 100) : '';
+            $colorId = valid_event_color_id($pdo, $eventId, isset($_POST['color_id']) ? $_POST['color_id'] : null);
 
             if ($tName !== '') {
                 $upTag = $pdo->prepare('UPDATE tags SET name = :name, color_id = :cid WHERE id = :id AND event_id = :eid');
@@ -675,7 +756,11 @@ if (strpos($uri, 'admin') === 0) {
             $tagId = (int)$tgMatch[1];
             $delTag = $pdo->prepare('DELETE FROM tags WHERE id = :id AND event_id = :eid');
             $delTag->execute(['id' => $tagId, 'eid' => $eventId]);
-            flash_set('success', 'تگ با موفقیت حذف شد و پیوند آن باطل گردید.', 'success');
+            if ($delTag->rowCount() > 0) {
+                flash_set('success', 'تگ با موفقیت حذف شد و پیوند آن باطل گردید.', 'success');
+            } else {
+                flash_set('error', 'تگ موردنظر پیدا نشد.', 'error');
+            }
             header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=tags'));
             exit;
         }
@@ -684,8 +769,11 @@ if (strpos($uri, 'admin') === 0) {
         if (preg_match('#^claims/(\d+)/delete$#', $subAction, $cMatch) && $_SERVER['REQUEST_METHOD'] === 'POST') {
             require_csrf();
             $claimId = (int)$cMatch[1];
-            delete_claim_and_reorder($pdo, $claimId);
-            flash_set('success', 'ثبت با موفقیت حذف شد و رتبه‌های بعدی بازشماری گردیدند.', 'success');
+            if (delete_claim_and_reorder($pdo, $claimId, $eventId)) {
+                flash_set('success', 'ثبت با موفقیت حذف شد و رتبه‌های بعدی بازشماری گردیدند.', 'success');
+            } else {
+                flash_set('error', 'حذف ثبت انجام نشد. ثبت پیدا نشد یا خطایی رخ داد.', 'error');
+            }
             header('Location: ' . path_url('/admin/events/' . $eventId . '?tab=leaderboard'));
             exit;
         }
@@ -716,7 +804,7 @@ if (strpos($uri, 'admin') === 0) {
 
         // واکشی ماتریس امتیازات
         $ptsStmt = $pdo->prepare('
-            SELECT cp.color_id, cp.rank, cp.points 
+            SELECT cp.color_id, cp.`rank`, cp.points 
             FROM color_points cp
             INNER JOIN colors c ON c.id = cp.color_id
             WHERE c.event_id = :eid

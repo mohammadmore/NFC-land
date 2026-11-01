@@ -7,12 +7,12 @@ if (!defined('APP_INIT')) {
     die('دسترسی مستقیم مجاز نیست.');
 }
 
-$colorHex = !empty($tag['color_hex']) ? $tag['color_hex'] : '#eab308';
+$colorHex = normalize_hex(isset($tag['color_hex']) ? $tag['color_hex'] : '', '#eab308');
 $colorName = !empty($tag['color_name']) ? $tag['color_name'] : 'طلایی ویژه';
 $palette = !empty($palette) ? $palette : get_tag_color_palette($colorHex);
 $logoPath = !empty($tag['logo_path']) ? $tag['logo_path'] : null;
 $logoTintMode = isset($tag['logo_tint_mode']) ? (int)$tag['logo_tint_mode'] : 1;
-$hasCustomLogo = !empty($logoPath) && file_exists(__DIR__ . '/../' . $logoPath);
+$hasCustomLogo = !empty($logoPath) && strpos($logoPath, 'assets/uploads/') === 0 && file_exists(__DIR__ . '/../' . $logoPath);
 
 // دریافت پیام انگیزشی (از نتیجه ثبت یا تصادفی برای اسکن فعلی)
 $activeQuote = '';
@@ -164,6 +164,12 @@ $body_class = 'is-scan-view';
                                 </button>
                             </div>
                         </form>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!empty($board_url)): ?>
+                    <div class="scan-board-link" style="text-align: center; margin-top: 1.25rem;">
+                        <a href="<?= e($board_url) ?>" class="btn btn-glass-secondary btn-block">🏆 مشاهده جدول رده‌بندی زنده</a>
                     </div>
                 <?php endif; ?>
             </div>

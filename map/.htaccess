@@ -25,7 +25,7 @@ AddDefaultCharset UTF-8
 </IfModule>
 
 # ۵. محافظت از فایل‌های حساس
-<FilesMatch "^(config\.php|\.env|\.git|composer\.|package\.|README\.md)">
+<FilesMatch "^(config\.php|config\.sample\.php|\.env.*|\.git.*|composer\..*|package\..*|README\.md|.*\.sqlite.*|\.perms_fixed)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
@@ -38,16 +38,16 @@ AddDefaultCharset UTF-8
 # ۶. بازنویسی مسیرها (URL Rewriting)
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteBase /map/
+    # RewriteBase عمداً تنظیم نشده تا برنامه در هر زیرپوشه‌ای (نه فقط /map) کار کند.
 
     # دسترسی مستقیم به استایل‌ها و اسکریپت‌های assets
     RewriteCond %{REQUEST_FILENAME} -f
     RewriteRule ^assets/ - [L]
 
-    # مسدودسازی دسترسی مستقیم مرورگر به پوشه‌های inc و views
-    RewriteRule ^(inc|views)/ - [F,L]
+    # مسدودسازی دسترسی مستقیم مرورگر به پوشه‌های inc، views و data (پایگاه‌داده)
+    RewriteRule ^(inc|views|data)(/|$) - [F,L]
 
-    # اگر فایل واقعی درخواست شده باشد (مانند setup.php)، مستقیماً سرو شود
+    # اگر فایل واقعی درخواست شده باشد (مانند فایل‌های assets)، مستقیماً سرو شود
     RewriteCond %{REQUEST_FILENAME} -f
     RewriteRule ^ - [L]
 

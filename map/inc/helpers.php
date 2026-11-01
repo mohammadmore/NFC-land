@@ -52,7 +52,9 @@ function generate_unique_tag_code($pdo) {
         $code = generate_tag_code();
         $stmt = $pdo->prepare('SELECT id FROM tags WHERE code = :code LIMIT 1');
         $stmt->execute(['code' => $code]);
-        if (!$stmt->fetch()) {
+        $exists = $stmt->fetch();
+        $stmt->closeCursor();
+        if (!$exists) {
             return $code;
         }
     }
@@ -80,6 +82,10 @@ function is_ssl() {
  */
 function url($path = '') {
     $base = rtrim(defined('BASE_URL') ? BASE_URL : '', '/');
+    if ($base === '' && !empty($_SERVER['HTTP_HOST'])) {
+        $host = preg_replace('/[^A-Za-z0-9.\-:\[\]]/', '', $_SERVER['HTTP_HOST']);
+        $base = (is_ssl() ? 'https' : 'http') . '://' . $host;
+    }
     $sub = trim(defined('BASE_PATH') ? BASE_PATH : '', '/');
     $subPart = $sub !== '' ? '/' . $sub : '';
     $cleanPath = ltrim($path, '/');
@@ -129,6 +135,14 @@ function rank_to_words_fa($rank) {
 function flash_set($key, $message, $type = 'info') {
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
+    }
+    if (is_array($message)) {
+        // پیام ساختاریافته (مانند نتیجه اسکن: type/message/motivation_quote) همان‌طور ذخیره می‌شود
+        if (!isset($message['type'])) {
+            $message['type'] = $type;
+        }
+        $_SESSION['flash'][$key] = $message;
+        return;
     }
     $_SESSION['flash'][$key] = [
         'message' => $message,
@@ -239,6 +253,8 @@ function check_rate_limit($pdo, $kind, $key, $maxAttempts, $windowSeconds) {
         'since' => $since,
     ]);
     $row = $stmt->fetch();
+    // بستن صریح کرسر: در SQLite کرسر باز، تراکنش خواندن را باز نگه می‌دارد و نوشتن بعدی را با خطای قفل مواجه می‌کند
+    $stmt->closeCursor();
     return ((int)$row['cnt'] < (int)$maxAttempts);
 }
 
@@ -276,7 +292,7 @@ function show_404() {
  */
 function get_tag_color_palette($hex) {
     $hex = trim((string)$hex);
-    if (!preg_match('/^#?[0-9a-fA-F]{3,6}$/', $hex)) {
+    if (!preg_match('/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', $hex)) {
         $hex = '#eab308'; // پیش‌فرض طلایی جذاب
     }
     if (strpos($hex, '#') !== 0) {
@@ -318,3 +334,124 @@ function get_tag_color_palette($hex) {
     ];
 }
 
+/**
+ * اعتبارسنجی و یکسان‌سازی کد رنگ هگز (#rrggbb)؛ در صورت نامعتبر بودن مقدار پیش‌فرض برمی‌گردد
+ */
+function normalize_hex($hex, $default = '#94a3b8') {
+    $hex = strtolower(trim((string)$hex));
+    if (preg_match('/^#?([0-9a-f]{3})$/', $hex, $m)) {
+        $h = $m[1];
+        return '#' . $h[0] . $h[0] . $h[1] . $h[1] . $h[2] . $h[2];
+    }
+    if (preg_match('/^#?([0-9a-f]{6})$/', $hex, $m)) {
+        return '#' . $m[1];
+    }
+    return $default;
+}
+
+/**
+ * طول رشته یونیکد (با پشتیبانی از نبود mbstring)
+ */
+function str_len_u($str) {
+    return function_exists('mb_strlen') ? mb_strlen((string)$str, 'UTF-8') : strlen((string)$str);
+}
+
+/**
+ * کوتاه‌سازی رشته یونیکد به حداکثر طول مجاز ستون پایگاه‌داده
+ */
+function str_limit_u($str, $max) {
+    $str = trim((string)$str);
+    if (function_exists('mb_substr')) {
+        return mb_substr($str, 0, $max, 'UTF-8');
+    }
+    return substr($str, 0, $max);
+}
+
+/**
+ * آیا درایور پایگاه‌داده MySQL/MariaDB است؟
+ */
+function db_is_mysql($pdo) {
+    return strpos($pdo->getAttribute(PDO::ATTR_DRIVER_NAME), 'mysql') !== false;
+}
+
+/**
+ * گرفتن قفل نوشتن روی ردیف تگ داخل تراکنش جاری.
+ *
+ * MySQL: با SELECT ... FOR UPDATE ردیف قفل می‌شود.
+ * SQLite: یک UPDATE بی‌اثر به عنوان اولین دستور تراکنش، قفل نوشتن پایگاه‌داده را فوراً می‌گیرد
+ * تا تراکنش‌های همزمان به جای خطای SQLITE_BUSY (ارتقای قفل خواندن به نوشتن) منتظر بمانند (busy_timeout).
+ */
+function lock_tag_row($pdo, $tagId) {
+    if (db_is_mysql($pdo)) {
+        $stmt = $pdo->prepare('SELECT id, color_id FROM tags WHERE id = :id FOR UPDATE');
+        $stmt->execute(['id' => (int)$tagId]);
+        $row = $stmt->fetch();
+        $stmt->closeCursor();
+        return $row;
+    }
+    $pdo->prepare('UPDATE tags SET id = id WHERE id = :id')->execute(['id' => (int)$tagId]);
+    $stmt = $pdo->prepare('SELECT id, color_id FROM tags WHERE id = :id');
+    $stmt->execute(['id' => (int)$tagId]);
+    $row = $stmt->fetch();
+    $stmt->closeCursor();
+    return $row;
+}
+
+/**
+ * بازشماری رتبه‌های ثبت‌های یک تگ به ترتیب زمان ثبت (۱، ۲، ۳، ...)
+ *
+ * برای جلوگیری از نقض قید یکتای (tag_id, rank) در حین به‌روزرسانی، ابتدا رتبه‌ها
+ * به مقادیر منفی موقت منتقل و سپس مقدار نهایی نوشته می‌شود.
+ */
+function renumber_tag_claims($pdo, $tagId) {
+    $remStmt = $pdo->prepare('SELECT id FROM claims WHERE tag_id = :tag_id ORDER BY created_at ASC, id ASC');
+    $remStmt->execute(['tag_id' => (int)$tagId]);
+    $ids = $remStmt->fetchAll(PDO::FETCH_COLUMN);
+
+    $upStmt = $pdo->prepare('UPDATE claims SET `rank` = :rank WHERE id = :id');
+    $k = 1;
+    foreach ($ids as $id) {
+        $upStmt->execute(['rank' => -$k, 'id' => $id]);
+        $k++;
+    }
+    $k = 1;
+    foreach ($ids as $id) {
+        $upStmt->execute(['rank' => $k, 'id' => $id]);
+        $k++;
+    }
+}
+
+/**
+ * ساخت ردیف‌های امتیاز صفر برای جایگاه‌هایی که هنوز در جدول امتیاز رنگ‌های رویداد وجود ندارند
+ */
+function seed_color_points($pdo, $eventId, $positionsCount) {
+    $ins = db_is_mysql($pdo)
+        ? $pdo->prepare('INSERT IGNORE INTO color_points (color_id, `rank`, points) VALUES (:cid, :rank, 0)')
+        : $pdo->prepare('INSERT OR IGNORE INTO color_points (color_id, `rank`, points) VALUES (:cid, :rank, 0)');
+    $colStmt = $pdo->prepare('SELECT id FROM colors WHERE event_id = :eid');
+    $colStmt->execute(['eid' => (int)$eventId]);
+    foreach ($colStmt->fetchAll(PDO::FETCH_COLUMN) as $cid) {
+        for ($r = 1; $r <= (int)$positionsCount; $r++) {
+            $ins->execute(['cid' => (int)$cid, 'rank' => $r]);
+        }
+    }
+}
+
+/**
+ * بررسی تعلق رنگ به رویداد؛ در غیر این صورت null (بدون رنگ) برمی‌گردد
+ */
+function valid_event_color_id($pdo, $eventId, $colorId) {
+    if (empty($colorId)) {
+        return null;
+    }
+    $stmt = $pdo->prepare('SELECT id FROM colors WHERE id = :id AND event_id = :eid LIMIT 1');
+    $stmt->execute(['id' => (int)$colorId, 'eid' => (int)$eventId]);
+    return $stmt->fetch() ? (int)$colorId : null;
+}
+
+/**
+ * توکن تصادفی برای لینک عمومی لیدربورد
+ */
+function generate_board_token() {
+    return base64url_encode(random_bytes(16));
+}

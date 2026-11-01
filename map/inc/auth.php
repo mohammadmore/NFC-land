@@ -61,12 +61,24 @@ function is_admin_logged_in() {
 /**
  * محافظت از مسیرهای ادمین
  */
-function require_admin() {
+function require_admin($allowPendingPasswordChange = false) {
     if (!is_admin_logged_in()) {
         $loginUrl = path_url('/admin/login');
         header('Location: ' . $loginUrl);
         exit;
     }
+    if (!$allowPendingPasswordChange && admin_must_change_password()) {
+        flash_set('warning', 'برای امنیت سامانه، ابتدا رمز عبور پیش‌فرض را تغییر دهید.', 'warning');
+        header('Location: ' . path_url('/admin/password'));
+        exit;
+    }
+}
+
+/**
+ * آیا ادمین باید پیش از ادامه کار رمز عبور خود را تغییر دهد؟
+ */
+function admin_must_change_password() {
+    return !empty($_SESSION['admin_must_change_password']);
 }
 
 /**
@@ -90,9 +102,10 @@ function admin_login($pdo, $username, $password) {
         ];
     }
 
-    $stmt = $pdo->prepare('SELECT id, username, password_hash FROM admins WHERE username = :username LIMIT 1');
+    $stmt = $pdo->prepare('SELECT id, username, password_hash, must_change_password FROM admins WHERE username = :username LIMIT 1');
     $stmt->execute(['username' => trim($username)]);
     $admin = $stmt->fetch();
+    $stmt->closeCursor();
 
     if ($admin && password_verify($password, $admin['password_hash'])) {
         // احراز هویت موفق: بازسازی شناسه نشست
@@ -101,6 +114,13 @@ function admin_login($pdo, $username, $password) {
         $_SESSION['admin_id'] = (int)$admin['id'];
         $_SESSION['admin_username'] = $admin['username'];
         $_SESSION['admin_last_activity'] = time();
+        // اجبار به تغییر رمز پیش‌فرض یا رمزی که مدیر سامانه تعیین کرده باشد
+        $_SESSION['admin_must_change_password'] = ((int)$admin['must_change_password'] === 1 || $password === 'admin1234');
+
+        if (password_needs_rehash($admin['password_hash'], PASSWORD_DEFAULT)) {
+            $re = $pdo->prepare('UPDATE admins SET password_hash = :h WHERE id = :id');
+            $re->execute(['h' => password_hash($password, PASSWORD_DEFAULT), 'id' => (int)$admin['id']]);
+        }
 
         return [
             'success' => true,
@@ -147,14 +167,7 @@ function admin_change_password($pdo, $adminId, $currentPassword, $newPassword) {
     $stmt = $pdo->prepare('SELECT id, password_hash FROM admins WHERE id = :id LIMIT 1');
     $stmt->execute(['id' => (int)$adminId]);
     $admin = $stmt->fetch();
-
-    if (!$admin) {
-        $stmtFallback = $pdo->query('SELECT id, password_hash FROM admins ORDER BY id ASC LIMIT 1');
-        $admin = $stmtFallback->fetch();
-        if ($admin) {
-            $adminId = (int)$admin['id'];
-        }
-    }
+    $stmt->closeCursor();
 
     if (!$admin || !password_verify($currentPassword, $admin['password_hash'])) {
         return [
@@ -164,8 +177,17 @@ function admin_change_password($pdo, $adminId, $currentPassword, $newPassword) {
     }
 
     $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
-    $upStmt = $pdo->prepare('UPDATE admins SET password_hash = :hash WHERE id = :id');
-    $upStmt->execute(['hash' => $newHash, 'id' => $adminId]);
+    if (hash_equals((string)$currentPassword, (string)$newPassword) || $newPassword === 'admin1234') {
+        return [
+            'success' => false,
+            'message' => 'رمز عبور جدید باید با رمز فعلی و رمز پیش‌فرض متفاوت باشد.',
+        ];
+    }
+
+    $upStmt = $pdo->prepare('UPDATE admins SET password_hash = :hash, must_change_password = 0 WHERE id = :id');
+    $upStmt->execute(['hash' => $newHash, 'id' => (int)$adminId]);
+    $_SESSION['admin_must_change_password'] = false;
+    session_regenerate_id(true);
 
     return [
         'success' => true,

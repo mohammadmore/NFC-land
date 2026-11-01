@@ -54,6 +54,14 @@ $positionsCount = (int)$event['positions_count'];
                     <div>
                         <h2 class="card-title">جدول رده‌بندی تیم‌ها</h2>
                         <small class="text-muted">مرتب‌سازی: ۱. مجموع امتیاز، ۲. تعداد تگ بیشتر، ۳. ثبت زودتر</small>
+                        <small class="text-muted d-block">
+                            لیدربورد عمومی:
+                            <?php if (!empty($event['public_board']) && (int)$event['public_board'] === 1 && !empty($event['board_token'])): ?>
+                                <a href="<?= e(path_url('/board/' . $event['board_token'])) ?>" target="_blank" rel="noopener">فعال (مشاهده)</a>
+                            <?php else: ?>
+                                غیرفعال (قابل فعال‌سازی از تب تنظیمات)
+                            <?php endif; ?>
+                        </small>
                     </div>
                     <div class="leaderboard-controls" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
                         <label class="auto-refresh-toggle">
@@ -434,8 +442,8 @@ $positionsCount = (int)$event['positions_count'];
                                                 </td>
                                                 <td>
                                                     <div class="color-edit-cell">
-                                                        <input type="color" name="colors[<?= $cid ?>][hex]" value="<?= e($col['hex']) ?>" class="form-control form-control-color">
-                                                        <span class="color-hex-label dir-ltr"><?= e($col['hex']) ?></span>
+                                                        <input type="color" name="colors[<?= $cid ?>][hex]" value="<?= e(normalize_hex($col['hex'])) ?>" class="form-control form-control-color">
+                                                        <span class="color-hex-label dir-ltr"><?= e(normalize_hex($col['hex'])) ?></span>
                                                     </div>
                                                 </td>
                                                 <td>
@@ -449,11 +457,13 @@ $positionsCount = (int)$event['positions_count'];
                                                     </td>
                                                 <?php endfor; ?>
                                                 <td>
-                                                    <a href="<?= e(path_url('/admin/events/' . $event['id'] . '/colors/' . $cid . '/delete?csrf_token=' . csrf_token())) ?>" 
-                                                       class="btn btn-sm btn-danger" 
-                                                       onclick="return confirm('با حذف این رنگ، تگ‌های مرتبط بدون رنگ می‌شوند. ادامه می‌دهید؟');">
+                                                    <button type="submit"
+                                                       formaction="<?= e(path_url('/admin/events/' . $event['id'] . '/colors/' . $cid . '/delete')) ?>"
+                                                       formnovalidate
+                                                       class="btn btn-sm btn-danger"
+                                                       onclick="return confirm('با حذف این رنگ، تگ‌های مرتبط بدون رنگ می‌شوند و تغییرات ذخیره‌نشده جدول از بین می‌رود. ادامه می‌دهید؟');">
                                                         حذف
-                                                    </a>
+                                                    </button>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
@@ -510,9 +520,9 @@ $positionsCount = (int)$event['positions_count'];
                             <?php endif; ?>
 
                             <div class="form-group mb-3">
-                                <label for="event_logo_input" class="form-label" style="font-size: 0.9rem;">انتخاب فایل جدید لوگو (PNG, SVG, JPG, WEBP):</label>
-                                <input type="file" id="event_logo_input" name="logo" class="form-control" accept=".png,.svg,.jpg,.jpeg,.webp">
-                                <small class="text-muted">پیشنهاد: تصاویر با پس‌زمینه شفاف (PNG شفاف یا SVG) زیباترین هماهنگی را با طراحی شیشه‌ای (Glassmorphism) ایجاد می‌کنند.</small>
+                                <label for="event_logo_input" class="form-label" style="font-size: 0.9rem;">انتخاب فایل جدید لوگو (PNG, JPG, WEBP - حداکثر ۳ مگابایت):</label>
+                                <input type="file" id="event_logo_input" name="logo" class="form-control" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+                                <small class="text-muted">پیشنهاد: تصاویر PNG با پس‌زمینه شفاف زیباترین هماهنگی را با طراحی شیشه‌ای (Glassmorphism) ایجاد می‌کنند. (فایل SVG به دلایل امنیتی پذیرفته نمی‌شود.)</small>
                             </div>
 
                             <div class="form-group mb-0">
@@ -543,12 +553,53 @@ $positionsCount = (int)$event['positions_count'];
                             </label>
                         </div>
 
+                        <div class="form-group">
+                            <label class="custom-control-label">
+                                <input type="checkbox" name="public_board" value="1" <?= (!empty($event['public_board']) && (int)$event['public_board'] === 1) ? 'checked' : '' ?> class="custom-checkbox">
+                                نمایش عمومی لیدربورد (صفحه جدول رده‌بندی زنده برای شرکت‌کنندگان و نمایش روی پروژکتور، همراه با لینک آن در صفحه اسکن تگ‌ها)
+                            </label>
+                            <small class="text-muted d-block">در صورت خاموش بودن، جدول رده‌بندی فقط در پنل مدیریت دیده می‌شود.</small>
+                        </div>
+
                         <div class="form-actions mt-4">
                             <button type="submit" class="btn btn-primary btn-lg">ذخیره تنظیمات رویداد</button>
                         </div>
                     </form>
                 </div>
             </div>
+
+            <?php if (!empty($event['board_token'])):
+                $boardFullUrl = url('/board/' . $event['board_token']);
+                $boardOn = (int)$event['public_board'] === 1;
+            ?>
+            <div class="card max-w-700 mt-4">
+                <div class="card-header"><h3 class="card-title">🏆 لیدربورد عمومی</h3></div>
+                <div class="card-body">
+                    <p class="mb-3">
+                        وضعیت:
+                        <?php if ($boardOn): ?>
+                            <span class="badge badge-success">فعال - برای همه قابل مشاهده است</span>
+                        <?php else: ?>
+                            <span class="badge badge-secondary">غیرفعال - لینک زیر صفحه ۴۰۴ نشان می‌دهد</span>
+                        <?php endif; ?>
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">لینک صفحه لیدربورد عمومی:</label>
+                        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                            <code class="dir-ltr" style="word-break: break-all; flex: 1;"><?= e($boardFullUrl) ?></code>
+                            <button type="button" class="btn btn-sm btn-outline-primary btn-copy" data-text="<?= e($boardFullUrl) ?>">کپی</button>
+                            <?php if ($boardOn): ?>
+                                <a href="<?= e($boardFullUrl) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">مشاهده</a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <form method="POST" action="<?= e(path_url('/admin/events/' . $event['id'] . '/board/regenerate')) ?>" class="inline-form" onsubmit="return confirm('لینک فعلی لیدربورد عمومی باطل می‌شود. ادامه می‌دهید؟');">
+                        <?= csrf_field() ?>
+                        <button type="submit" class="btn btn-sm btn-danger">🔁 ساخت لینک جدید (ابطال لینک فعلی)</button>
+                    </form>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
 
     <?php elseif ($currentTab === 'export'): ?>

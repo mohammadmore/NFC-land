@@ -23,9 +23,16 @@ function get_db() {
         $dbPath = defined('DB_PATH') ? DB_PATH : (__DIR__ . '/../data/database.sqlite');
         $dir = dirname($dbPath);
         if (!is_dir($dir)) {
-            @mkdir($dir, 0777, true);
+            @mkdir($dir, 0755, true);
         }
-        @chmod($dir, 0777);
+        // فقط در صورت عدم امکان نوشتن، دسترسی بازتر داده می‌شود (هاست‌های mod_php)
+        if (!is_writable($dir)) {
+            @chmod($dir, 0775);
+            clearstatcache(true, $dir);
+            if (!is_writable($dir)) {
+                @chmod($dir, 0777);
+            }
+        }
 
         $dsn = 'sqlite:' . $dbPath;
         try {
@@ -37,9 +44,6 @@ function get_db() {
             $pdo->exec('PRAGMA foreign_keys = ON;');
             $pdo->exec('PRAGMA journal_mode = WAL;');
             $pdo->exec('PRAGMA busy_timeout = 5000;');
-            if (file_exists($dbPath)) {
-                @chmod($dbPath, 0666);
-            }
         } catch (PDOException $e) {
             if (defined('APP_DEBUG') && APP_DEBUG) {
                 die('خطای اتصال به SQLite: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8'));
@@ -98,6 +102,7 @@ function ensure_database_schema($pdo, $driver) {
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username VARCHAR(50) NOT NULL UNIQUE,
                     password_hash VARCHAR(255) NOT NULL,
+                    must_change_password TINYINT NOT NULL DEFAULT 0,
                     created_at DATETIME NOT NULL
                 );
 
@@ -109,6 +114,8 @@ function ensure_database_schema($pdo, $driver) {
                     is_active TINYINT NOT NULL DEFAULT 1,
                     logo_path VARCHAR(255) NULL,
                     logo_tint_mode TINYINT NOT NULL DEFAULT 1,
+                    public_board TINYINT NOT NULL DEFAULT 0,
+                    board_token VARCHAR(32) NULL,
                     created_at DATETIME NOT NULL
                 );
 
@@ -123,9 +130,9 @@ function ensure_database_schema($pdo, $driver) {
 
                 CREATE TABLE IF NOT EXISTS color_points (
                     color_id INT NOT NULL,
-                    rank TINYINT NOT NULL,
+                    `rank` TINYINT NOT NULL,
                     points INT NOT NULL DEFAULT 0,
-                    PRIMARY KEY (color_id, rank),
+                    PRIMARY KEY (color_id, `rank`),
                     FOREIGN KEY (color_id) REFERENCES colors(id) ON DELETE CASCADE
                 );
 
@@ -152,10 +159,10 @@ function ensure_database_schema($pdo, $driver) {
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     tag_id INT NOT NULL,
                     team_id INT NOT NULL,
-                    rank TINYINT NOT NULL,
+                    `rank` TINYINT NOT NULL,
                     created_at DATETIME NOT NULL,
                     UNIQUE (tag_id, team_id),
-                    UNIQUE (tag_id, rank),
+                    UNIQUE (tag_id, `rank`),
                     FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
                     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
                 );
@@ -174,6 +181,7 @@ function ensure_database_schema($pdo, $driver) {
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     username VARCHAR(50) NOT NULL UNIQUE,
                     password_hash VARCHAR(255) NOT NULL,
+                    must_change_password TINYINT NOT NULL DEFAULT 0,
                     created_at DATETIME NOT NULL
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
 
@@ -185,6 +193,8 @@ function ensure_database_schema($pdo, $driver) {
                     is_active TINYINT NOT NULL DEFAULT 1,
                     logo_path VARCHAR(255) NULL,
                     logo_tint_mode TINYINT NOT NULL DEFAULT 1,
+                    public_board TINYINT NOT NULL DEFAULT 0,
+                    board_token VARCHAR(32) NULL,
                     created_at DATETIME NOT NULL
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
 
@@ -199,9 +209,9 @@ function ensure_database_schema($pdo, $driver) {
 
                 "CREATE TABLE IF NOT EXISTS color_points (
                     color_id INT NOT NULL,
-                    rank TINYINT NOT NULL,
+                    `rank` TINYINT NOT NULL,
                     points INT NOT NULL DEFAULT 0,
-                    PRIMARY KEY (color_id, rank),
+                    PRIMARY KEY (color_id, `rank`),
                     FOREIGN KEY (color_id) REFERENCES colors(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
 
@@ -228,10 +238,10 @@ function ensure_database_schema($pdo, $driver) {
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     tag_id INT NOT NULL,
                     team_id INT NOT NULL,
-                    rank TINYINT NOT NULL,
+                    `rank` TINYINT NOT NULL,
                     created_at DATETIME NOT NULL,
                     UNIQUE KEY unique_tag_team (tag_id, team_id),
-                    UNIQUE KEY unique_tag_rank (tag_id, rank),
+                    UNIQUE KEY unique_tag_rank (tag_id, `rank`),
                     FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
                     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
@@ -250,28 +260,34 @@ function ensure_database_schema($pdo, $driver) {
             }
         }
 
-        // بررسی و اضافه کردن خودکار ستون‌های لوگو در جدول events در دیتابیس‌های ساخته‌شده قبلی
-        try {
+        // مهاجرت خودکار: افزودن ستون‌های جدید به پایگاه‌داده‌های ساخته‌شده با نسخه‌های قبلی
+        $migrations = [
+            'events' => [
+                'logo_path' => 'VARCHAR(255) NULL',
+                'logo_tint_mode' => 'TINYINT NOT NULL DEFAULT 1',
+                'public_board' => 'TINYINT NOT NULL DEFAULT 0',
+                'board_token' => 'VARCHAR(32) NULL',
+            ],
+            'admins' => [
+                'must_change_password' => 'TINYINT NOT NULL DEFAULT 0',
+            ],
+        ];
+        foreach ($migrations as $table => $columns) {
             $existingColumns = [];
             if ($driver === 'sqlite') {
-                $colsStmt = $pdo->query("PRAGMA table_info(events)");
-                foreach ($colsStmt->fetchAll() as $col) {
+                foreach ($pdo->query("PRAGMA table_info({$table})")->fetchAll() as $col) {
                     $existingColumns[] = strtolower($col['name']);
                 }
             } else {
-                $colsStmt = $pdo->query("SHOW COLUMNS FROM events");
-                foreach ($colsStmt->fetchAll() as $col) {
+                foreach ($pdo->query("SHOW COLUMNS FROM {$table}")->fetchAll() as $col) {
                     $existingColumns[] = strtolower($col['Field']);
                 }
             }
-            if (!in_array('logo_path', $existingColumns, true)) {
-                $pdo->exec("ALTER TABLE events ADD COLUMN logo_path VARCHAR(255) NULL");
+            foreach ($columns as $colName => $colDef) {
+                if (!in_array($colName, $existingColumns, true)) {
+                    $pdo->exec("ALTER TABLE {$table} ADD COLUMN {$colName} {$colDef}");
+                }
             }
-            if (!in_array('logo_tint_mode', $existingColumns, true)) {
-                $pdo->exec("ALTER TABLE events ADD COLUMN logo_tint_mode TINYINT NOT NULL DEFAULT 1");
-            }
-        } catch (Exception $e) {
-            // در صورت وجود ستون‌ها یا عدم نیاز نادیده گرفته می‌شود
         }
 
         // ۱. بررسی و ایجاد مدیر اولیه خودکار (در صورت عدم وجود)
@@ -282,7 +298,8 @@ function ensure_database_schema($pdo, $driver) {
             $defaultUser = 'admin';
             $defaultPass = 'admin1234';
             $hash = password_hash($defaultPass, PASSWORD_DEFAULT);
-            $ins = $pdo->prepare('INSERT INTO admins (username, password_hash, created_at) VALUES (:u, :p, :c)');
+            // رمز پیش‌فرض فقط برای اولین ورود است و پس از ورود، تغییر آن اجباری است
+            $ins = $pdo->prepare('INSERT INTO admins (username, password_hash, must_change_password, created_at) VALUES (:u, :p, 1, :c)');
             $ins->execute([
                 'u' => $defaultUser,
                 'p' => $hash,
@@ -318,7 +335,7 @@ function ensure_database_schema($pdo, $driver) {
             ];
 
             $insCol = $pdo->prepare('INSERT INTO colors (event_id, name, hex, sort_order) VALUES (:eid, :name, :hex, :order)');
-            $insPt = $pdo->prepare('INSERT INTO color_points (color_id, rank, points) VALUES (:cid, :rank, :pts)');
+            $insPt = $pdo->prepare('INSERT INTO color_points (color_id, `rank`, points) VALUES (:cid, :rank, :pts)');
 
             $firstColorId = null;
             $order = 1;
@@ -363,6 +380,8 @@ function ensure_database_schema($pdo, $driver) {
             }
         }
     } catch (Exception $e) {
+        // خطای ساخت جداول نباید بی‌صدا نادیده گرفته شود؛ ثبت در لاگ و توقف با پیام قابل فهم
         error_log('Database auto-initialization error: ' . $e->getMessage());
+        throw new RuntimeException('خطا در آماده‌سازی خودکار جداول پایگاه‌داده. جزئیات در لاگ خطای سرور ثبت شده است.', 0, $e);
     }
 }

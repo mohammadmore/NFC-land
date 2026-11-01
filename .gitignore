@@ -6,3 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# NFC map runtime data (never commit: contains tag codes and admin hashes)
+map/data/*
+!map/data/.htaccess
+map/inc/config.php
+map/assets/uploads/*
+!map/assets/uploads/.htaccess
