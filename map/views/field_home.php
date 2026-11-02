@@ -60,7 +60,7 @@ $modes = field_modes();
                         <?php foreach ($events as $ev): ?>
                             <tr>
                                 <td class="font-bold">
-                                    <?= e($ev['name']) ?>
+                                    <a href="<?= e(path_url('/admin/field/event/' . (int)$ev['id'])) ?>">🗺️ <?= e($ev['name']) ?></a>
                                     <?php if ((int)$ev['is_active'] === 1): ?><span class="badge badge-success">فعال</span><?php endif; ?>
                                 </td>
                                 <td><?= $ev['venue_name'] ? e($ev['venue_name']) : '<span class="text-danger">تعیین نشده</span>' ?></td>

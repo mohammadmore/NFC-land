@@ -80,6 +80,29 @@ function render_tag_panel($pdo, $tag, $me, $returnTo) {
         }
     }
 
+    // جایگزینی تگ خراب با تگ رزرو: فهرست تگ‌های نصب‌شده همین رویداد (برای تگ آماده نصب و بدون ثبت)
+    $replaceTargets = [];
+    if ($tag['status'] === 'new' && empty($tag['spot_id'])) {
+        $rc = $pdo->prepare('SELECT COUNT(*) FROM claims WHERE tag_id = :t');
+        $rc->execute(['t' => (int)$tag['id']]);
+        if ((int)$rc->fetchColumn() === 0) {
+            $rt = $pdo->prepare("
+                SELECT tg.id, tg.name, tg.status, s.name AS spot_name, z.name AS zone_name, f.name AS floor_name
+                FROM tags tg
+                INNER JOIN spots s ON s.id = tg.spot_id
+                INNER JOIN zones z ON z.id = s.zone_id
+                INNER JOIN floors f ON f.id = z.floor_id
+                WHERE tg.event_id = :e AND tg.id <> :t AND tg.status IN ('placed', 'verified', 'missing')
+                ORDER BY f.sort_order, f.id, z.sort_order, z.id, tg.id
+            ");
+            $rt->execute(['e' => (int)$tag['event_id'], 't' => (int)$tag['id']]);
+            $replaceTargets = $rt->fetchAll();
+        }
+        $rc->closeCursor();
+    }
+    $justReplaced = isset($_SESSION['field_replaced_tag']) && (int)$_SESSION['field_replaced_tag'] === (int)$tag['id'];
+    unset($_SESSION['field_replaced_tag']);
+
     $lg = $pdo->prepare('
         SELECT l.action, l.note, l.created_at, a.username, a.display_name
         FROM tag_log l LEFT JOIN admins a ON a.id = l.user_id
@@ -98,6 +121,8 @@ function render_tag_panel($pdo, $tag, $me, $returnTo) {
         'last_claim' => $lastClaim,
         'log' => $lg->fetchAll(),
         'mode' => field_mode(),
+        'replace_targets' => $replaceTargets,
+        'just_replaced' => $justReplaced,
         'return_to' => $returnTo,
         'panel_url' => $returnTo === 'scan' ? path_url('/' . $tag['code']) : path_url('/admin/field/tag/' . (int)$tag['id']),
     ]);
@@ -179,6 +204,31 @@ function handle_field_routes($pdo, $adminPath, $me) {
         json_response(['success' => true, 'id' => $newId, 'name' => str_limit_u($name, 100)]);
     }
 
+    // نقشه بخشی و فهرست کار یک رویداد
+    if (preg_match('#^field/event/(\d+)$#', $adminPath, $em)) {
+        field_render_event_map($pdo, (int)$em[1], $me);
+    }
+
+    // پایان جمع‌آوری: ثبت تگ‌های باقی‌مانده به‌عنوان گم‌شده (فقط مدیر)
+    if (preg_match('#^field/event/(\d+)/close-collection$#', $adminPath, $em) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        require_csrf();
+        if (!$isAdmin) {
+            flash_set('error', 'این عملیات فقط برای مدیران مجاز است.', 'error');
+        } else {
+            $eid = (int)$em[1];
+            $left = $pdo->prepare("SELECT id FROM tags WHERE event_id = :e AND status IN ('placed', 'verified')");
+            $left->execute(['e' => $eid]);
+            $ids = $left->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($ids as $lid) {
+                $pdo->prepare("UPDATE tags SET status = 'missing' WHERE id = :id")->execute(['id' => (int)$lid]);
+                tag_log_add($pdo, (int)$lid, $eid, (int)$me['id'], 'missing', 'پایان جمع‌آوری');
+            }
+            flash_set(count($ids) ? 'warning' : 'success', count($ids) ? fa_num(count($ids)) . ' تگ جمع‌آوری‌نشده به‌عنوان «گم‌شده» ثبت شد.' : 'همه تگ‌ها جمع‌آوری شده‌اند. 🎉', count($ids) ? 'warning' : 'success');
+        }
+        header('Location: ' . path_url('/admin/field/event/' . (int)$em[1] . '?filter=missing'));
+        exit;
+    }
+
     // پنل تگ از طریق فهرست (بدون لمس تگ)
     if (preg_match('#^field/tag/(\d+)$#', $adminPath, $tm)) {
         $tag = field_get_tag($pdo, 'id', (int)$tm[1]);
@@ -189,7 +239,7 @@ function handle_field_routes($pdo, $adminPath, $me) {
     }
 
     // عملیات روی تگ
-    if (preg_match('#^field/tag/(\d+)/(place|photos|spot-edit|verify|collect|missing|unassign)$#', $adminPath, $am) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (preg_match('#^field/tag/(\d+)/(place|photos|spot-edit|verify|collect|missing|unassign|replace-code|adopt)$#', $adminPath, $am) && $_SERVER['REQUEST_METHOD'] === 'POST') {
         require_csrf();
         $tag = field_get_tag($pdo, 'id', (int)$am[1]);
         if (!$tag) {
@@ -256,6 +306,43 @@ function handle_field_routes($pdo, $adminPath, $me) {
             $pdo->prepare("UPDATE tags SET status = 'missing' WHERE id = :id")->execute(['id' => $tagId]);
             tag_log_add($pdo, $tagId, $eventId, $uid, 'missing', isset($_POST['note']) ? $_POST['note'] : null);
             flash_set('warning', 'تگ «' . $tag['name'] . '» گم‌شده ثبت شد.', 'warning');
+        } elseif ($action === 'replace-code') {
+            // تگ خراب: کد جدید برای همین تگ (ثبت‌ها و محل حفظ می‌شوند). کد قبلی فوراً باطل می‌شود.
+            $newCode = generate_unique_tag_code($pdo);
+            $pdo->prepare('UPDATE tags SET code = :c WHERE id = :id')->execute(['c' => $newCode, 'id' => $tagId]);
+            tag_log_add($pdo, $tagId, $eventId, $uid, 'replaced_code');
+            $_SESSION['field_replaced_tag'] = $tagId;
+            flash_set('success', 'کد جدید ساخته شد و تگ قبلی باطل شد. لینک جدید را روی یک تگ نو رایت کنید و در همین نقطه نصب کنید.', 'success');
+            header('Location: ' . path_url('/admin/field/tag/' . $tagId));
+            exit;
+        } elseif ($action === 'adopt') {
+            // تگ رزرو (رایت‌شده و استفاده‌نشده) جایگزین تگ خراب می‌شود: کد تگ رزرو به تگ خراب منتقل می‌شود
+            // تا ثبت‌ها، امتیازها و محل تگ خراب حفظ شوند؛ ردیف تگ رزرو حذف می‌شود.
+            $target = field_get_tag($pdo, 'id', isset($_POST['target_tag_id']) ? (int)$_POST['target_tag_id'] : 0);
+            $cc = $pdo->prepare('SELECT COUNT(*) FROM claims WHERE tag_id = :t');
+            $cc->execute(['t' => $tagId]);
+            $reserveClaims = (int)$cc->fetchColumn();
+            $cc->closeCursor();
+            if (!$target || (int)$target['event_id'] !== $eventId || (int)$target['id'] === $tagId) {
+                flash_set('error', 'تگ خراب را از فهرست انتخاب کنید.', 'error');
+            } elseif ($tag['status'] !== 'new' || !empty($tag['spot_id']) || $reserveClaims > 0) {
+                flash_set('error', 'فقط تگی که هنوز نصب نشده و ثبتی ندارد می‌تواند به‌عنوان تگ رزرو جایگزین شود.', 'error');
+            } else {
+                $pdo->beginTransaction();
+                try {
+                    $code = $tag['code'];
+                    $pdo->prepare('DELETE FROM tags WHERE id = :id')->execute(['id' => $tagId]);
+                    $pdo->prepare('UPDATE tags SET code = :c WHERE id = :id')->execute(['c' => $code, 'id' => (int)$target['id']]);
+                    tag_log_add($pdo, (int)$target['id'], $eventId, $uid, 'replaced_reserve', 'تگ رزرو «' . $tag['name'] . '»');
+                    $pdo->commit();
+                } catch (Exception $ex) {
+                    $pdo->rollBack();
+                    throw $ex;
+                }
+                flash_set('success', '♻️ این تگ اکنون جایگزین «' . $target['name'] . '» است (ثبت‌ها و محل آن حفظ شد). آن را در همان نقطه نصب کنید و تگ خراب را بردارید.', 'success');
+                header('Location: ' . path_url('/' . $code));
+                exit;
+            }
         } elseif ($action === 'unassign') {
             $pdo->prepare("UPDATE tags SET spot_id = NULL, status = 'new', placed_at = NULL, placed_by = NULL, verified_at = NULL, verified_by = NULL WHERE id = :id")->execute(['id' => $tagId]);
             tag_log_add($pdo, $tagId, $eventId, $uid, 'unassigned');
@@ -369,4 +456,135 @@ function field_action_place($pdo, $tag, $me, $now) {
         $msg .= ' پیشنهاد: هر دو عکس (نزدیک و باز) را برای این نقطه ثبت کنید.';
     }
     flash_set('success', $msg, 'success');
+}
+
+/**
+ * تگ‌های مشکوک: تگ نصب‌شده‌ای که مدتی فعالیتی نداشته در حالی که تگ‌های دیگر همان بخش
+ * پس از آن ثبت شده‌اند (احتمال جابه‌جایی، خرابی یا برداشته شدن در نظافت).
+ *
+ * @return array tag_id => true
+ */
+function field_stale_tags($tags, $claimsByTag, $positions, $minutes = 30) {
+    $now = time();
+    $lastByTag = [];
+    $byZone = [];
+    foreach ($tags as $t) {
+        if (!in_array($t['status'], ['placed', 'verified'], true) || empty($t['zone_id'])) {
+            continue;
+        }
+        $last = max((string)$t['placed_at'], (string)$t['verified_at'], isset($claimsByTag[$t['id']]) ? $claimsByTag[$t['id']]['last'] : '');
+        $lastByTag[$t['id']] = $last;
+        $byZone[$t['zone_id']][] = $t['id'];
+    }
+    $stale = [];
+    foreach ($lastByTag as $tid => $last) {
+        $cnt = isset($claimsByTag[$tid]) ? $claimsByTag[$tid]['count'] : 0;
+        if ($cnt >= $positions || $last === '' || ($now - strtotime($last . ' UTC')) < $minutes * 60) {
+            continue;
+        }
+        $peerClaimsAfter = 0;
+        foreach ($tags as $t) {
+            if ((int)$t['id'] === (int)$tid || empty($t['zone_id']) || !isset($byZone[$t['zone_id']]) || !in_array($tid, $byZone[$t['zone_id']], true)) {
+                continue;
+            }
+            if (isset($claimsByTag[$t['id']]) && $claimsByTag[$t['id']]['last'] > $last) {
+                $peerClaimsAfter += $claimsByTag[$t['id']]['count'];
+            }
+        }
+        if ($peerClaimsAfter >= 2) {
+            $stale[$tid] = true;
+        }
+    }
+    return $stale;
+}
+
+/**
+ * نقشه بخشی رویداد: تگ‌ها بر اساس طبقه و بخش، با وضعیت، عکس و (برای مدیر) ثبت‌ها
+ */
+function field_render_event_map($pdo, $eventId, $me) {
+    $isAdmin = ($me['role'] === 'admin');
+    $ev = $pdo->prepare('SELECT e.*, v.name AS venue_name FROM events e LEFT JOIN venues v ON v.id = e.venue_id WHERE e.id = :id');
+    $ev->execute(['id' => $eventId]);
+    $event = $ev->fetch();
+    $ev->closeCursor();
+    if (!$event) {
+        show_404();
+    }
+
+    $ts = $pdo->prepare('
+        SELECT tg.id, tg.name, tg.status, tg.spot_id, tg.placed_at, tg.verified_at, tg.collected_at,
+               c.hex AS color_hex, c.name AS color_name,
+               s.name AS spot_name, s.description AS spot_desc, s.photo_near, s.photo_wide,
+               z.id AS zone_id, z.name AS zone_name, z.sort_order AS zone_order,
+               f.id AS floor_id, f.name AS floor_name, f.sort_order AS floor_order,
+               pu.username AS placed_by_name, pu.display_name AS placed_by_display
+        FROM tags tg
+        LEFT JOIN colors c ON c.id = tg.color_id
+        LEFT JOIN spots s ON s.id = tg.spot_id
+        LEFT JOIN zones z ON z.id = s.zone_id
+        LEFT JOIN floors f ON f.id = z.floor_id
+        LEFT JOIN admins pu ON pu.id = tg.placed_by
+        WHERE tg.event_id = :e
+        ORDER BY f.sort_order ASC, f.id ASC, z.sort_order ASC, z.id ASC, tg.id ASC
+    ');
+    $ts->execute(['e' => $eventId]);
+    $tags = $ts->fetchAll();
+
+    $claimsByTag = [];
+    $cs = $pdo->prepare('SELECT cl.tag_id, COUNT(*) AS cnt, MAX(cl.created_at) AS last_at FROM claims cl INNER JOIN tags tg ON tg.id = cl.tag_id WHERE tg.event_id = :e GROUP BY cl.tag_id');
+    $cs->execute(['e' => $eventId]);
+    foreach ($cs->fetchAll() as $c) {
+        $claimsByTag[$c['tag_id']] = ['count' => (int)$c['cnt'], 'last' => $c['last_at']];
+    }
+    $stale = ((int)$event['is_active'] === 1) ? field_stale_tags($tags, $claimsByTag, (int)$event['positions_count']) : [];
+
+    $counts = array_fill_keys(array_keys(tag_statuses()), 0);
+    foreach ($tags as $t) {
+        if (isset($counts[$t['status']])) {
+            $counts[$t['status']]++;
+        }
+    }
+
+    // نقطه‌های خالی محل (از رویدادهای قبلی) برای فهرست کار نصب
+    $emptySpots = [];
+    if (!empty($event['venue_id'])) {
+        $structure = get_venue_structure($pdo, $event['venue_id'], $eventId);
+        $zoneNames = [];
+        foreach ($structure['zones'] as $z) {
+            $zoneNames[$z['id']] = $z;
+        }
+        $floorNames = [];
+        foreach ($structure['floors'] as $f) {
+            $floorNames[$f['id']] = $f['name'];
+        }
+        $usedInEvent = [];
+        foreach ($tags as $t) {
+            if (!empty($t['spot_id']) && $t['status'] !== 'new') {
+                $usedInEvent[(int)$t['spot_id']] = true;
+            }
+        }
+        foreach ($structure['spots'] as $s) {
+            if (!isset($usedInEvent[(int)$s['id']]) && isset($zoneNames[$s['zone_id']])) {
+                $z = $zoneNames[$s['zone_id']];
+                $s['zone_name'] = $z['name'];
+                $s['floor_name'] = isset($floorNames[$z['floor_id']]) ? $floorNames[$z['floor_id']] : '';
+                $emptySpots[] = $s;
+            }
+        }
+    }
+
+    $filter = isset($_GET['filter']) ? $_GET['filter'] : 'all';
+    render_view('field_event', [
+        'page_title' => 'نقشه و کار میدانی - ' . $event['name'],
+        'event' => $event,
+        'tags' => $tags,
+        'claims_by_tag' => $claimsByTag,
+        'stale' => $stale,
+        'counts' => $counts,
+        'empty_spots' => $emptySpots,
+        'is_admin' => $isAdmin,
+        'filter' => in_array($filter, ['all', 'todo-install', 'todo-verify', 'todo-collect', 'missing', 'stale'], true) ? $filter : 'all',
+        'me' => $me,
+    ]);
+    exit;
 }

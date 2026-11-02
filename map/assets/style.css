@@ -1542,3 +1542,23 @@ body.print-page { background: #f1f5f9; padding: 1rem; }
 .venue-spot-thumb { height: 120px; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 1.8rem; }
 .venue-spot-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .venue-spot-form { display: flex; flex-direction: column; gap: 0.35rem; }
+
+/* Event zone map */
+.field-progress { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: #e2e8f0; }
+.field-progress span { display: block; height: 100%; }
+.field-filters { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
+.field-filter { padding: 0.4rem 0.8rem; border-radius: 999px; border: 1px solid #cbd5e1; background: #fff; color: #334155; text-decoration: none; font-size: 0.9rem; font-weight: 600; }
+.field-filter.is-active { background: #2563eb; border-color: #2563eb; color: #fff; }
+.field-search { flex: 1; min-width: 180px; }
+.field-zone { margin-bottom: 1rem; }
+.field-zone:last-child { margin-bottom: 0; }
+.field-zone-title { font-size: 1rem; margin-bottom: 0.5rem; }
+.field-tag-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.field-tag-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; color: inherit; text-decoration: none; }
+.field-tag-row:hover { border-color: #93c5fd; background: #f8fafc; }
+.field-tag-row.is-stale { border-color: #fca5a5; background: #fef2f2; }
+.field-tag-row-thumb { width: 56px; height: 56px; flex-shrink: 0; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 1.4rem; }
+.field-tag-row-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.field-tag-row-info { flex: 1; display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.field-tag-row-info small { overflow-wrap: anywhere; }
+.field-replace-box { border-color: #93c5fd; }

@@ -134,6 +134,60 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     /* ------------------------------------------------------------------
+       ۲.۱. جستجو در نقشه بخشی، کپی لینک و رایت تکی NFC (تعویض تگ)
+       ------------------------------------------------------------------ */
+    const search = document.querySelector('.js-tag-search');
+    if (search) {
+        const norm = function (s) {
+            return String(s || '').replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\u200c/g, ' ').toLowerCase().trim();
+        };
+        const items = Array.prototype.slice.call(document.querySelectorAll('.js-search-item'));
+        search.addEventListener('input', function () {
+            const q = norm(search.value);
+            items.forEach(function (it) {
+                it.style.display = (!q || norm(it.getAttribute('data-search')).indexOf(q) !== -1) ? '' : 'none';
+            });
+            document.querySelectorAll('.field-zone, .field-floor').forEach(function (box) {
+                const any = Array.prototype.some.call(box.querySelectorAll('.js-search-item'), function (it) { return it.style.display !== 'none'; });
+                box.style.display = any ? '' : 'none';
+            });
+        });
+    }
+
+    document.querySelectorAll('.btn-copy').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const text = btn.getAttribute('data-text');
+            const done = function () {
+                const old = btn.textContent;
+                btn.textContent = 'کپی شد!';
+                setTimeout(function () { btn.textContent = old; }, 1800);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done).catch(function () { prompt('لینک را کپی کنید:', text); });
+            } else {
+                prompt('لینک را کپی کنید:', text);
+            }
+        });
+    });
+
+    const writeOne = document.querySelector('.js-nfc-write-one');
+    if (writeOne && 'NDEFReader' in window) {
+        writeOne.style.display = '';
+        const st = document.querySelector('.js-nfc-write-status');
+        writeOne.addEventListener('click', function () {
+            if (st) st.textContent = '📲 گوشی را به تگ نو نزدیک کنید...';
+            new NDEFReader().write({ records: [{ recordType: 'url', data: writeOne.getAttribute('data-url') }] })
+                .then(function () {
+                    if (st) st.textContent = '✅ رایت شد. تگ نو را در همین نقطه نصب کنید، لمسش کنید و «تأیید» را بزنید.';
+                    if (navigator.vibrate) navigator.vibrate(120);
+                })
+                .catch(function (err) {
+                    if (st) st.textContent = '✕ رایت ناموفق بود: ' + (err && err.message ? err.message : '');
+                });
+        });
+    }
+
+    /* ------------------------------------------------------------------
        ۳. انتخاب طبقه ← بخش ← نقطه
        ------------------------------------------------------------------ */
     const placeForm = document.querySelector('.js-place-form');

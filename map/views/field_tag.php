@@ -61,6 +61,8 @@ $actionBase = path_url('/admin/field/tag/' . (int)$tag['id']);
                 <span class="badge <?= e(tag_status_class($status)) ?> field-status-badge"><?= e(tag_status_label($status)) ?></span>
             </div>
 
+            <p class="mt-2 mb-0" style="font-size: 0.85rem;"><a href="<?= e(path_url('/admin/field/event/' . (int)$tag['event_id'])) ?>">🗺️ نقشه و فهرست کار این رویداد</a></p>
+
             <div class="field-mode-switch field-mode-switch-sm mt-3" role="group" aria-label="حالت کار">
                 <?php foreach ($modes as $mk => $mv): ?>
                     <form method="POST" action="<?= e(path_url('/admin/field/mode')) ?>" class="inline-form">
@@ -73,6 +75,22 @@ $actionBase = path_url('/admin/field/tag/' . (int)$tag['id']);
             </div>
         </div>
     </div>
+
+    <?php if ($just_replaced):
+        $newUrl = url('/' . $tag['code']);
+    ?>
+        <div class="card mb-3 field-replace-box">
+            <div class="card-header"><h2 class="card-title">🔁 لینک جدید این تگ را روی یک تگ نو رایت کنید</h2></div>
+            <div class="card-body">
+                <div class="copy-url-group">
+                    <input type="text" readonly value="<?= e($newUrl) ?>" class="form-control form-control-sm dir-ltr" tabindex="-1">
+                    <button type="button" class="btn btn-sm btn-secondary btn-copy" data-text="<?= e($newUrl) ?>">کپی</button>
+                </div>
+                <button type="button" class="btn btn-primary btn-block mt-2 js-nfc-write-one" data-url="<?= e($newUrl) ?>" style="display: none;">📲 رایت روی تگ نو با همین گوشی</button>
+                <p class="text-muted mt-2 mb-0 js-nfc-write-status" style="font-size: 0.85rem;">روی iPhone: لینک را کپی کرده و با اپ NFC Tools رایت کنید، یا به‌جای این روش از یک «تگ رزرو» استفاده کنید. سپس تگ نو را در همین نقطه نصب کنید.</p>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <?php if (!$hasVenue): ?>
         <div class="alert alert-warning">
@@ -236,6 +254,49 @@ $actionBase = path_url('/admin/field/tag/' . (int)$tag['id']);
                         <?php include __DIR__ . '/partials_field_photos.php'; ?>
 
                         <button type="submit" class="btn btn-primary btn-lg btn-block field-big-btn"><?= $spot ? 'ثبت محل جدید' : '📍 ثبت نصب' ?></button>
+                    </form>
+                </div>
+            </details>
+        </div>
+    <?php endif; ?>
+
+    <!-- تگ خراب یا گم‌شده -->
+    <?php if ($spot && in_array($status, ['placed', 'verified', 'missing'], true)): ?>
+        <div class="card mb-3">
+            <details class="field-details">
+                <summary class="card-header"><h2 class="card-title" style="display: inline;">🛠️ این تگ خراب یا گم شده است</h2></summary>
+                <div class="card-body">
+                    <p style="font-size: 0.9rem;">ثبت‌ها و امتیازهای این تگ و محل نصبش در هر دو روش حفظ می‌شوند.</p>
+                    <ol style="font-size: 0.9rem; padding-right: 1.2rem;">
+                        <li><strong>با تگ رزرو (همه گوشی‌ها):</strong> یک تگ رایت‌شده و استفاده‌نشده از همین رویداد را لمس کنید و در بخش «جایگزین تگ خراب» آن، همین تگ را انتخاب کنید.</li>
+                        <li><strong>با کد جدید (نیاز به رایت):</strong> کد این تگ عوض می‌شود و تگ فعلی فوراً باطل می‌شود؛ لینک جدید باید روی یک تگ نو رایت شود.</li>
+                    </ol>
+                    <form method="POST" action="<?= e($actionBase . '/replace-code') ?>" onsubmit="return confirm('کد این تگ عوض شود؟ تگ فیزیکی فعلی دیگر کار نخواهد کرد.');">
+                        <?= csrf_field() ?><?= $returnField ?>
+                        <button type="submit" class="btn btn-outline-primary btn-block">🔁 ساخت کد جدید برای رایت روی تگ نو</button>
+                    </form>
+                </div>
+            </details>
+        </div>
+    <?php endif; ?>
+
+    <?php if (!empty($replace_targets)): ?>
+        <div class="card mb-3">
+            <details class="field-details">
+                <summary class="card-header"><h2 class="card-title" style="display: inline;">♻️ جایگزین تگ خراب (استفاده به‌عنوان تگ رزرو)</h2></summary>
+                <div class="card-body">
+                    <p style="font-size: 0.9rem;">این تگ هنوز نصب نشده است. اگر یکی از تگ‌های نصب‌شده خراب یا گم شده، آن را انتخاب کنید: این تگ جای آن را می‌گیرد (با همان محل، ثبت‌ها و امتیازها) و تگ قبلی باطل می‌شود.</p>
+                    <form method="POST" action="<?= e($actionBase . '/adopt') ?>" onsubmit="return confirm('این تگ جایگزین تگ انتخاب‌شده شود؟ تگ قبلی باطل خواهد شد.');">
+                        <?= csrf_field() ?><?= $returnField ?>
+                        <div class="form-group">
+                            <select name="target_tag_id" class="form-control form-select" required>
+                                <option value="">— تگ خراب را انتخاب کنید —</option>
+                                <?php foreach ($replace_targets as $rt): ?>
+                                    <option value="<?= (int)$rt['id'] ?>"><?= e($rt['name']) ?> — <?= e($rt['floor_name']) ?> › <?= e($rt['zone_name']) ?> › <?= e($rt['spot_name']) ?><?= $rt['status'] === 'missing' ? ' (گم‌شده)' : '' ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">♻️ جایگزین کن</button>
                     </form>
                 </div>
             </details>

@@ -43,6 +43,7 @@ $positionsCount = (int)$event['positions_count'];
     <a href="?tab=colors" class="tab-item <?= $currentTab === 'colors' ? 'active' : '' ?>">🎨 رنگ‌ها و امتیازات</a>
     <a href="?tab=settings" class="tab-item <?= $currentTab === 'settings' ? 'active' : '' ?>">⚙️ تنظیمات</a>
     <a href="?tab=export" class="tab-item <?= $currentTab === 'export' ? 'active' : '' ?>">📥 خروجی اکسل (CSV)</a>
+    <a href="<?= e(path_url('/admin/field/event/' . (int)$event['id'])) ?>" class="tab-item">🗺️ نقشه و کار میدانی</a>
 </nav>
 
 <div class="tab-content">
