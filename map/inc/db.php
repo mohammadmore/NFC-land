@@ -187,6 +187,53 @@ function ensure_database_schema($pdo, $driver) {
                     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
                 );
                 CREATE INDEX IF NOT EXISTS idx_device_locks_team ON device_locks (team_id);
+
+                CREATE TABLE IF NOT EXISTS venues (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name VARCHAR(150) NOT NULL,
+                    created_at DATETIME NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS floors (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    venue_id INT NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    sort_order INT NOT NULL DEFAULT 0,
+                    FOREIGN KEY (venue_id) REFERENCES venues(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS zones (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    floor_id INT NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    sort_order INT NOT NULL DEFAULT 0,
+                    FOREIGN KEY (floor_id) REFERENCES floors(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS spots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    zone_id INT NOT NULL,
+                    name VARCHAR(150) NOT NULL,
+                    description VARCHAR(500) NULL,
+                    photo_near VARCHAR(100) NULL,
+                    photo_wide VARCHAR(100) NULL,
+                    created_by INT NULL,
+                    created_at DATETIME NOT NULL,
+                    FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS tag_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tag_id INT NOT NULL,
+                    event_id INT NOT NULL,
+                    user_id INT NULL,
+                    action VARCHAR(30) NOT NULL,
+                    note VARCHAR(255) NULL,
+                    created_at DATETIME NOT NULL,
+                    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+                    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_tag_log_tag ON tag_log (tag_id, created_at);
             ');
         } else {
             $mySqlTables = [
@@ -278,6 +325,53 @@ function ensure_database_schema($pdo, $driver) {
                     INDEX idx_device_locks_team (team_id),
                     FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
                     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS venues (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(150) NOT NULL,
+                    created_at DATETIME NOT NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS floors (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    venue_id INT NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    sort_order INT NOT NULL DEFAULT 0,
+                    FOREIGN KEY (venue_id) REFERENCES venues(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS zones (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    floor_id INT NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    sort_order INT NOT NULL DEFAULT 0,
+                    FOREIGN KEY (floor_id) REFERENCES floors(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS spots (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    zone_id INT NOT NULL,
+                    name VARCHAR(150) NOT NULL,
+                    description VARCHAR(500) NULL,
+                    photo_near VARCHAR(100) NULL,
+                    photo_wide VARCHAR(100) NULL,
+                    created_by INT NULL,
+                    created_at DATETIME NOT NULL,
+                    FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS tag_log (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    tag_id INT NOT NULL,
+                    event_id INT NOT NULL,
+                    user_id INT NULL,
+                    action VARCHAR(30) NOT NULL,
+                    note VARCHAR(255) NULL,
+                    created_at DATETIME NOT NULL,
+                    INDEX idx_tag_log_tag (tag_id, created_at),
+                    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+                    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             ];
 
@@ -294,6 +388,17 @@ function ensure_database_schema($pdo, $driver) {
                 'public_board' => 'TINYINT NOT NULL DEFAULT 0',
                 'board_token' => 'VARCHAR(32) NULL',
                 'lock_device_team' => 'TINYINT NOT NULL DEFAULT 0',
+                'venue_id' => 'INT NULL',
+            ],
+            'tags' => [
+                'spot_id' => 'INT NULL',
+                'status' => "VARCHAR(20) NOT NULL DEFAULT 'new'",
+                'placed_at' => 'DATETIME NULL',
+                'placed_by' => 'INT NULL',
+                'verified_at' => 'DATETIME NULL',
+                'verified_by' => 'INT NULL',
+                'collected_at' => 'DATETIME NULL',
+                'collected_by' => 'INT NULL',
             ],
             'admins' => [
                 'must_change_password' => 'TINYINT NOT NULL DEFAULT 0',

@@ -575,6 +575,24 @@ $positionsCount = (int)$event['positions_count'];
                         </div>
 
                         <div class="form-group">
+                            <label for="venue_select" class="form-label">📍 محل برگزاری (هتل/ساختمان)</label>
+                            <select id="venue_select" name="venue_id" class="form-control form-select">
+                                <option value="">— تعیین نشده —</option>
+                                <?php foreach ($venues as $vn): ?>
+                                    <option value="<?= (int)$vn['id'] ?>" <?= (!empty($event['venue_id']) && (int)$event['venue_id'] === (int)$vn['id']) ? 'selected' : '' ?>><?= e($vn['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-muted d-block">
+                                طبقات، بخش‌ها، نقطه‌ها و عکس‌های نصب متعلق به محل هستند و در رویدادهای بعدی همان محل دوباره استفاده می‌شوند.
+                                <a href="<?= e(path_url('/admin/venues')) ?>">مدیریت محل‌ها</a>
+                                <?php if (!empty($event['venue_id'])): ?> · <a href="<?= e(path_url('/admin/venues/' . (int)$event['venue_id'])) ?>">طبقات و نقطه‌های این محل</a><?php endif; ?>
+                            </small>
+                            <?php if (!empty($event['venue_id'])): ?>
+                                <small class="text-danger d-block">توجه: تغییر محل، محل نصب تگ‌های فعلی را پاک می‌کند.</small>
+                            <?php endif; ?>
+                        </div>
+
+                        <div class="form-group">
                             <label for="positions_count_edit" class="form-label">تعداد جایگاه‌های مجاز برای هر تگ (۱ تا ۱۰)</label>
                             <input type="number" id="positions_count_edit" name="positions_count" class="form-control" min="1" max="10" value="<?= $positionsCount ?>" required>
                             <small class="text-muted">توجه: کاهش این عدد به مقداری کمتر از بیشترین جایگاه ثبت‌شده فعلی در مسابقه مجاز نمی‌باشد.</small>
@@ -616,6 +634,20 @@ $positionsCount = (int)$event['positions_count'];
                     </form>
                 </div>
             </div>
+
+            <?php if (empty($event['venue_id'])): ?>
+            <div class="card max-w-700 mt-4">
+                <div class="card-header"><h3 class="card-title">📍 ساخت محل برگزاری جدید برای این رویداد</h3></div>
+                <div class="card-body">
+                    <form method="POST" action="<?= e(path_url('/admin/venues/create')) ?>" class="inline-form" style="flex-wrap: wrap;">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="for_event" value="<?= (int)$event['id'] ?>">
+                        <input type="text" name="name" class="form-control" placeholder="مثال: هتل اسپیناس پالاس" required maxlength="150" style="flex: 1; min-width: 200px;">
+                        <button type="submit" class="btn btn-success">ساخت و اتصال به رویداد</button>
+                    </form>
+                </div>
+            </div>
+            <?php endif; ?>
 
             <?php if (!empty($event['board_token'])):
                 $boardFullUrl = url('/board/' . $event['board_token']);

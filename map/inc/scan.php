@@ -63,6 +63,28 @@ function handle_scan_request($pdo, $code) {
         show_404();
     }
 
+    // کادر برگزاری (مدیر/نصاب) لاگین‌شده: به جای فرم امتیاز، پنل تگ (نصب/تأیید/جمع‌آوری) باز می‌شود
+    // و هیچ امتیازی ثبت نمی‌شود. مدیر می‌تواند با ?as=player صفحه را مثل شرکت‌کننده ببیند و تست کند.
+    $GLOBALS['scan_as_player'] = false;
+    if (is_admin_logged_in()) {
+        $me = current_user($pdo);
+        $asPlayer = ($me['role'] === 'admin' && isset($_GET['as']) && $_GET['as'] === 'player');
+        if (!$asPlayer) {
+            if (admin_must_change_password()) {
+                flash_set('warning', 'برای امنیت سامانه، ابتدا رمز عبور خود را تغییر دهید.', 'warning');
+                header('Location: ' . path_url('/admin/password'));
+                exit;
+            }
+            if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                flash_set('warning', 'کادر برگزاری نمی‌تواند برای تیم‌ها امتیاز ثبت کند.', 'warning');
+                header('Location: ' . path_url('/' . $code));
+                exit;
+            }
+            render_tag_panel($pdo, field_get_tag($pdo, 'code', $code), $me, 'scan');
+        }
+        $GLOBALS['scan_as_player'] = true;
+    }
+
     $colorHex = normalize_hex($tag['color_hex'], '#eab308');
     $boardUrl = ((int)$tag['public_board'] === 1 && !empty($tag['board_token'])) ? path_url('/board/' . $tag['board_token']) : null;
     $palette = get_tag_color_palette($colorHex);
@@ -168,7 +190,7 @@ function handle_claim_submission($pdo, $tag) {
             'type' => 'warning',
             'message' => 'صفحه مدت زیادی باز مانده بود و ثبت انجام نشد. لطفاً دوباره تیم خود را انتخاب و ثبت کنید.',
         ]);
-        header('Location: ' . path_url('/' . $code));
+        header('Location: ' . scan_self_url($code));
         exit;
     }
 
@@ -185,7 +207,7 @@ function handle_claim_submission($pdo, $tag) {
             'type' => 'error',
             'message' => 'تعداد ثبت‌های شما در چند دقیقه اخیر بیش از حد مجاز است. لطفاً کمی صبر کنید.',
         ]);
-        header('Location: ' . path_url('/' . $code));
+        header('Location: ' . scan_self_url($code));
         exit;
     }
     record_rate_limit($pdo, 'claim_sess', $sessKey);
@@ -197,7 +219,7 @@ function handle_claim_submission($pdo, $tag) {
             'type' => 'error',
             'message' => 'لطفاً نام تیم خود را انتخاب کنید.',
         ]);
-        header('Location: ' . path_url('/' . $code));
+        header('Location: ' . scan_self_url($code));
         exit;
     }
 
@@ -211,7 +233,7 @@ function handle_claim_submission($pdo, $tag) {
             'type' => 'error',
             'message' => 'تیم انتخاب‌شده معتبر نیست یا به این رویداد تعلق ندارد.',
         ]);
-        header('Location: ' . path_url('/' . $code));
+        header('Location: ' . scan_self_url($code));
         exit;
     }
 
@@ -225,7 +247,7 @@ function handle_claim_submission($pdo, $tag) {
                 'type' => 'error',
                 'message' => 'برای ثبت، کوکی‌های مرورگر باید فعال باشد. لطفاً صفحه را دوباره باز کنید (از حالت ناشناس/Incognito استفاده نکنید).',
             ]);
-            header('Location: ' . path_url('/' . $code));
+            header('Location: ' . scan_self_url($code));
             exit;
         }
     }
@@ -257,7 +279,7 @@ function handle_claim_submission($pdo, $tag) {
                     'type' => 'error',
                     'message' => 'این گوشی قبلاً برای «' . $lock['team_name'] . '» ثبت کرده و فقط برای همان تیم می‌تواند ثبت کند. در صورت اشتباه به برگزارکننده مراجعه کنید.',
                 ]);
-                header('Location: ' . path_url('/' . $code));
+                header('Location: ' . scan_self_url($code));
                 exit;
             }
         }
@@ -276,7 +298,7 @@ function handle_claim_submission($pdo, $tag) {
                 'type' => 'warning',
                 'message' => 'این تگ قبلاً توسط ' . fa_num($currentClaims) . ' تیم دیگر اسکن شده و دیگر امتیازی ندارد.',
             ]);
-            header('Location: ' . path_url('/' . $code));
+            header('Location: ' . scan_self_url($code));
             exit;
         }
 
@@ -293,7 +315,7 @@ function handle_claim_submission($pdo, $tag) {
                 'type' => 'error',
                 'message' => 'این تگ قبلاً توسط تیم شما ثبت شده است.',
             ]);
-            header('Location: ' . path_url('/' . $code));
+            header('Location: ' . scan_self_url($code));
             exit;
         }
 
@@ -385,6 +407,13 @@ function handle_claim_submission($pdo, $tag) {
     }
 
     // الگوی Post/Redirect/Get برای جلوگیری از ثبت مجدد با رفرش
-    header('Location: ' . path_url('/' . $code));
+    header('Location: ' . scan_self_url($code));
     exit;
+}
+
+/**
+ * آدرس همین صفحه اسکن (با حفظ حالت «مشاهده به‌عنوان شرکت‌کننده» برای مدیر)
+ */
+function scan_self_url($code) {
+    return path_url('/' . $code) . (!empty($GLOBALS['scan_as_player']) ? '?as=player' : '');
 }

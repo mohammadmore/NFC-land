@@ -112,6 +112,8 @@ require_once __DIR__ . '/inc/admin.php';
 require_once __DIR__ . '/inc/export.php';
 require_once __DIR__ . '/inc/quotes.php';
 require_once __DIR__ . '/inc/users.php';
+require_once __DIR__ . '/inc/venues.php';
+require_once __DIR__ . '/inc/field.php';
 
 // ارسال هدرهای امنیتی برای تمام پاسخ‌ها
 send_security_headers();
@@ -255,14 +257,7 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
     }
 
     // مسیرهای میدانی مشترک مدیر و نصاب (نصب، تأیید، جمع‌آوری)
-    if (function_exists('handle_field_routes') && handle_field_routes($pdo, $adminPath, $me)) {
-        exit;
-    }
-    if ($adminPath === 'field') {
-        render_view('field_home', [
-            'page_title' => 'کار میدانی',
-            'me' => $me,
-        ]);
+    if (handle_field_routes($pdo, $adminPath, $me)) {
         exit;
     }
 
@@ -271,6 +266,11 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
 
     // مدیریت کاربران و نصاب‌ها (/admin/users)
     if (handle_user_routes($pdo, $adminPath, $me)) {
+        exit;
+    }
+
+    // مدیریت محل‌های برگزاری، طبقات، بخش‌ها و نقطه‌ها (/admin/venues)
+    if (handle_venue_routes($pdo, $adminPath, $me)) {
         exit;
     }
 
@@ -393,6 +393,15 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
             $logoTintMode = !empty($_POST['logo_tint_mode']) ? 1 : 0;
             $publicBoard = !empty($_POST['public_board']) ? 1 : 0;
             $lockDeviceTeam = !empty($_POST['lock_device_team']) ? 1 : 0;
+            $venueId = isset($_POST['venue_id']) && (int)$_POST['venue_id'] > 0 ? (int)$_POST['venue_id'] : null;
+            if ($venueId !== null) {
+                $vChk = $pdo->prepare('SELECT id FROM venues WHERE id = :id');
+                $vChk->execute(['id' => $venueId]);
+                if (!$vChk->fetch()) {
+                    $venueId = null;
+                }
+                $vChk->closeCursor();
+            }
 
             if ($name === '') {
                 flash_set('error', 'نام رویداد نمی‌تواند خالی باشد.', 'error');
@@ -437,7 +446,7 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
                 UPDATE events 
                 SET name = :name, positions_count = :positions, show_result_to_scanner = :show_res, is_active = :active,
                     logo_path = :logo_path, logo_tint_mode = :tint_mode, public_board = :public_board, board_token = :board_token,
-                    lock_device_team = :lock_device
+                    lock_device_team = :lock_device, venue_id = :venue_id
                 WHERE id = :id
             ');
             $upStmt->execute([
@@ -450,11 +459,22 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
                 'public_board' => $publicBoard,
                 'board_token' => $boardToken,
                 'lock_device' => $lockDeviceTeam,
+                'venue_id' => $venueId,
                 'id' => $eventId,
             ]);
 
             if ($newLogoPath !== $currentLogo) {
                 delete_logo_file($currentLogo);
+            }
+
+            // تغییر محل برگزاری: اتصال تگ‌های نصب‌شده به نقطه‌های محل قبلی برداشته می‌شود
+            $oldVenue = !empty($event['venue_id']) ? (int)$event['venue_id'] : null;
+            if ($oldVenue !== $venueId && $oldVenue !== null) {
+                $det = $pdo->prepare("UPDATE tags SET spot_id = NULL, status = 'new', placed_at = NULL, placed_by = NULL, verified_at = NULL, verified_by = NULL WHERE event_id = :e AND spot_id IS NOT NULL");
+                $det->execute(['e' => $eventId]);
+                if ($det->rowCount() > 0) {
+                    flash_set('warning', 'محل برگزاری تغییر کرد و محل نصب ' . fa_num($det->rowCount()) . ' تگ پاک شد؛ این تگ‌ها باید دوباره نصب شوند.', 'warning');
+                }
             }
 
             // ساخت ردیف‌های امتیاز برای جایگاه‌های تازه اضافه‌شده
@@ -969,7 +989,10 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
         // واکشی ثبت‌ها به تفکیک تگ
         $claimsByTag = get_event_claims_by_tags($pdo, $eventId);
 
+        $venuesList = $pdo->query('SELECT id, name FROM venues ORDER BY name ASC')->fetchAll();
+
         render_view('admin_event', [
+            'venues' => $venuesList,
             'page_title' => 'مدیریت ' . e($event['name']),
             'event' => $event,
             'colors' => $colors,

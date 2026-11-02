@@ -136,7 +136,7 @@ $body_class = 'is-scan-view';
 
                 <?php elseif (!empty($can_claim)): ?>
                     <div class="claim-form-section">
-                        <form id="claimForm" method="POST" action="<?= e(path_url('/' . $tag['code'])) ?>" class="claim-form">
+                        <form id="claimForm" method="POST" action="<?= e(scan_self_url($tag['code'])) ?>" class="claim-form">
                             <?= csrf_field() ?>
 
                             <?php if (!empty($locked_team)): ?>

@@ -1471,3 +1471,74 @@ body.print-page { background: #f1f5f9; padding: 1rem; }
 .nfc-write-status.is-error { background: #fef2f2; border-color: #fca5a5; color: #7f1d1d; }
 @media (prefers-reduced-motion: reduce) { .btn-pulse { animation: none; } }
 .btn-copy, .btn-nfc-write { white-space: nowrap; }
+
+/* ==========================================================================
+   Field work (placement / verify / collect) & venues
+   ========================================================================== */
+.field-panel { max-width: 640px; margin: 0 auto; }
+.field-tag-head { overflow: hidden; }
+.field-tag-stripe { height: 8px; background: var(--tag-hex, #94a3b8); }
+.field-tag-name { font-size: 1.5rem; margin: 0.15rem 0; display: flex; align-items: center; gap: 0.5rem; }
+.field-status-badge { font-size: 0.95rem; padding: 0.4rem 0.75rem; }
+.field-mode-switch { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.field-mode-switch .inline-form { flex: 1; }
+.field-mode-btn {
+    width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+    border: 1px solid var(--border-color, #e2e8f0); background: #fff; border-radius: 10px;
+    font-family: inherit; font-weight: 700; font-size: 1rem; cursor: pointer; color: #334155;
+}
+.field-mode-btn.is-active { background: #2563eb; border-color: #2563eb; color: #fff; }
+.field-mode-switch-sm .field-mode-btn { min-height: 40px; font-size: 0.9rem; }
+.field-mode-icon { font-size: 1.2rem; }
+.field-big-btn { min-height: 58px; font-size: 1.15rem; }
+.field-done { font-weight: 700; color: #15803d; font-size: 1.05rem; }
+.field-warn { font-weight: 700; color: #b45309; }
+.field-location-path { font-size: 1.1rem; line-height: 1.9; }
+.field-location-desc { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.6rem 0.8rem; margin: 0.5rem 0; }
+.field-photos { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin: 0.75rem 0; }
+.field-photo { margin: 0; text-align: center; }
+.field-photo img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; border: 1px solid #e2e8f0; display: block; }
+.field-photo-empty { aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; background: #f1f5f9; border: 1px dashed #cbd5e1; border-radius: 10px; color: #94a3b8; }
+.field-photo figcaption { font-size: 0.8rem; color: #64748b; margin-top: 0.25rem; }
+.field-meta { list-style: none; padding: 0; margin: 0.5rem 0 0; font-size: 0.88rem; color: #475569; }
+.field-meta li { padding: 0.25rem 0; border-bottom: 1px dashed #e2e8f0; }
+.field-meta li:last-child { border-bottom: none; }
+.field-details { margin-top: 0.75rem; }
+.field-details > summary { cursor: pointer; font-weight: 700; color: #2563eb; list-style: none; }
+.field-details > summary::-webkit-details-marker { display: none; }
+.field-details > summary.card-header { display: block; }
+.field-place-details[open] > summary { border-bottom: 1px solid var(--border-color, #e2e8f0); }
+.field-select-row { display: flex; gap: 0.5rem; }
+.field-select-row select { flex: 1; }
+.field-spot-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem; }
+.field-spot-card {
+    display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem; border: 2px solid #e2e8f0; border-radius: 12px;
+    cursor: pointer; background: #fff;
+}
+.field-spot-card input { flex-shrink: 0; width: 20px; height: 20px; }
+.field-spot-card:has(input:checked) { border-color: #2563eb; background: #eff6ff; }
+.field-spot-card.is-occupied { opacity: 0.6; cursor: not-allowed; }
+.field-spot-thumb { width: 64px; height: 64px; flex-shrink: 0; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 1.5rem; }
+.field-spot-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.field-spot-info { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.field-spot-info small { color: #64748b; overflow-wrap: anywhere; }
+.field-spot-new { border-style: dashed; }
+.field-photo-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin: 0.75rem 0 1rem; }
+.field-photo-picker { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; cursor: pointer; text-align: center; }
+.field-photo-preview {
+    width: 100%; aspect-ratio: 4 / 3; border: 2px dashed #94a3b8; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    font-size: 2rem; background: #f8fafc; overflow: hidden;
+}
+.field-photo-preview img { width: 100%; height: 100%; object-fit: cover; }
+.field-photo-preview.is-loading { opacity: 0.6; }
+.field-photo-label { font-weight: 700; font-size: 0.9rem; line-height: 1.4; }
+.field-photo-label small { font-weight: 400; color: #64748b; }
+.field-admin-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.status-chips { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+
+.venue-zone { border: 1px solid #e2e8f0; border-radius: 10px; padding: 0.75rem; margin-bottom: 0.75rem; background: #f8fafc; }
+.venue-spots { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; margin-top: 0.75rem; }
+.venue-spot { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0.6rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.venue-spot-thumb { height: 120px; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 1.8rem; }
+.venue-spot-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.venue-spot-form { display: flex; flex-direction: column; gap: 0.35rem; }

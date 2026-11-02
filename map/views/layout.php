@@ -35,6 +35,7 @@ $isPublicView = !empty($body_class) && (strpos($body_class, 'is-scan-view') !== 
             <nav class="header-nav">
                 <?php if (function_exists('is_admin_role') && is_admin_role()): ?>
                     <a href="<?= e(path_url('/admin/events')) ?>" class="nav-link <?= (isset($active_nav) && $active_nav === 'events') ? 'active' : '' ?>">رویدادها</a>
+                    <a href="<?= e(path_url('/admin/venues')) ?>" class="nav-link <?= (isset($active_nav) && $active_nav === 'venues') ? 'active' : '' ?>">محل‌ها</a>
                     <a href="<?= e(path_url('/admin/users')) ?>" class="nav-link <?= (isset($active_nav) && $active_nav === 'users') ? 'active' : '' ?>">کاربران</a>
                 <?php endif; ?>
                 <a href="<?= e(path_url('/admin/field')) ?>" class="nav-link <?= (isset($active_nav) && $active_nav === 'field') ? 'active' : '' ?>">کار میدانی</a>
