@@ -63,6 +63,7 @@ foreach ($structure['spots'] as $s) {
                 <input type="number" name="sort_order" value="<?= (int)$f['sort_order'] ?>" class="form-control form-control-sm" style="width: 70px;" title="ترتیب">
                 <button type="submit" class="btn btn-sm btn-outline-primary" title="ذخیره">💾</button>
             </form>
+            <a class="btn btn-sm btn-secondary" href="<?= e(path_url($base . '/floors/' . $fid . '/plan')) ?>">🗺️ پلان و پین‌ها<?= !empty($f['plan_image']) ? ' (تصویر)' : (!empty($f['sketch_json']) ? ' (کروکی)' : '') ?></a>
             <form method="POST" action="<?= e(path_url($base . '/floors/' . $fid . '/delete')) ?>" class="inline-form" onsubmit="return confirm('طبقه «<?= e($f['name']) ?>» با همه بخش‌ها، نقطه‌ها و عکس‌هایش حذف شود؟');">
                 <?= csrf_field() ?>
                 <button type="submit" class="btn btn-sm btn-danger">حذف طبقه</button>

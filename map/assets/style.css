@@ -1562,3 +1562,65 @@ body.print-page { background: #f1f5f9; padding: 1rem; }
 .field-tag-row-info { flex: 1; display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
 .field-tag-row-info small { overflow-wrap: anywhere; }
 .field-replace-box { border-color: #93c5fd; }
+
+/* ==========================================================================
+   Floor plans, pins, sketch editor, assignments & print sheets
+   ========================================================================== */
+.plan-box { position: relative; width: 100%; border: 1px solid #cbd5e1; border-radius: 10px; overflow: hidden; background: #f8fafc; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+.plan-box .plan-bg { display: block; width: 100%; height: auto; pointer-events: none; }
+.plan-box svg.plan-bg { aspect-ratio: 10 / 7; height: auto; }
+.plan-pick, .plan-edit { cursor: crosshair; }
+.plan-pin {
+    position: absolute; width: 20px; height: 20px; transform: translate(-50%, -50%);
+    border-radius: 50%; background: #0ea5e9; border: 3px solid #fff;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45); z-index: 2;
+}
+a.plan-pin { cursor: pointer; }
+.plan-pin-placed { background: #0ea5e9; }
+.plan-pin-verified { background: #16a34a; }
+.plan-pin-collected { background: #64748b; }
+.plan-pin-missing { background: #dc2626; }
+.plan-pin-new { background: #cbd5e1; }
+.plan-pin-empty { background: #fff; border-color: #64748b; border-style: dashed; width: 16px; height: 16px; z-index: 1; }
+.plan-pin-current { background: #f59e0b; width: 28px; height: 28px; z-index: 3; }
+.plan-pin-edit { background: #2563eb; cursor: grab; touch-action: none; }
+.plan-pin-edit.is-selected { background: #f59e0b; width: 28px; height: 28px; z-index: 3; }
+.plan-pin.is-stale { box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.45), 0 2px 6px rgba(0, 0, 0, 0.35); }
+.plan-pin-num {
+    border-radius: 50%; width: 24px; height: 24px; transform: translate(-50%, -50%);
+    background: #1e293b; color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+}
+.plan-legend { display: flex; flex-wrap: wrap; gap: 0.75rem; font-size: 0.8rem; color: #475569; margin-top: 0.5rem; }
+.plan-legend span { display: inline-flex; align-items: center; gap: 0.3rem; }
+.plan-pin-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #94a3b8; }
+.plan-pin-dot.plan-pin-empty { border: 1px dashed #64748b; box-shadow: none; }
+.plan-pin-dot.is-stale { background: #fff; box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.6); }
+.plan-editor { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+@media (min-width: 900px) { .plan-editor { grid-template-columns: 1fr 300px; } }
+.plan-spot-list { display: flex; flex-direction: column; gap: 0.4rem; max-height: 70vh; overflow-y: auto; }
+.plan-spot-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; background: #fff; }
+.plan-spot-item.is-selected { border-color: #f59e0b; background: #fffbeb; }
+.plan-spot-item.has-pin .plan-spot-flag { color: #2563eb; }
+.plan-spot-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.plan-spot-text small { color: #64748b; }
+.sketch-toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.sketch-box { cursor: crosshair; touch-action: none; }
+.sketch-box svg { pointer-events: auto !important; }
+.sketch-shape { cursor: pointer; }
+.assign-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+.assign-floor { border-bottom: 1px dashed #e2e8f0; padding: 0.4rem 0; }
+.assign-zones { display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; padding-right: 1.4rem; font-size: 0.9rem; }
+.print-floor { background: #fff; max-width: 1000px; margin: 0 auto 1.5rem; padding: 1rem; border-radius: 10px; break-after: page; page-break-after: always; }
+.print-floor:last-of-type { break-after: auto; page-break-after: auto; }
+.print-floor h2 { font-size: 1.2rem; }
+.plan-print { margin-bottom: 0.75rem; }
+.print-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.print-table th, .print-table td { border: 1px solid #cbd5e1; padding: 0.35rem 0.45rem; vertical-align: middle; text-align: right; }
+.print-table th { background: #f1f5f9; }
+.print-thumb img { width: 64px; height: 48px; object-fit: cover; border-radius: 4px; display: block; }
+.print-check { text-align: center !important; font-size: 1.2rem; width: 56px; }
+.print-table tr { break-inside: avoid; page-break-inside: avoid; }
+@media print {
+    .print-floor { padding: 0; margin: 0; border-radius: 0; }
+    .plan-pin, .plan-box { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

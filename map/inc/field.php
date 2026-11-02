@@ -139,6 +139,10 @@ function handle_field_routes($pdo, $adminPath, $me) {
     if (preg_match('#^photo/(\d+)/(near|wide)(/thumb)?$#', $adminPath, $pm)) {
         serve_spot_photo($pdo, (int)$pm[1], $pm[2], !empty($pm[3]));
     }
+    // نمایش تصویر پلان طبقه (فقط کادر)
+    if (preg_match('#^plan/(\d+)$#', $adminPath, $pm)) {
+        serve_floor_plan($pdo, (int)$pm[1]);
+    }
 
     if ($adminPath !== 'field' && strpos($adminPath, 'field/') !== 0) {
         return false;
@@ -227,6 +231,30 @@ function handle_field_routes($pdo, $adminPath, $me) {
         }
         header('Location: ' . path_url('/admin/field/event/' . (int)$em[1] . '?filter=missing'));
         exit;
+    }
+
+    // تقسیم کار بین نصاب‌ها و گزارش فعالیت (فقط مدیر)
+    if (preg_match('#^field/event/(\d+)/team(/save)?$#', $adminPath, $em)) {
+        if (!$isAdmin) {
+            flash_set('warning', 'این بخش فقط برای مدیران در دسترس است.', 'warning');
+            header('Location: ' . path_url('/admin/field'));
+            exit;
+        }
+        if (!empty($em[2])) {
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                show_404();
+            }
+            require_csrf();
+            field_save_assignment($pdo, (int)$em[1]);
+            header('Location: ' . path_url('/admin/field/event/' . (int)$em[1] . '/team'));
+            exit;
+        }
+        field_render_team_page($pdo, (int)$em[1]);
+    }
+
+    // برگه چاپی طبقات (فهرست نقطه‌ها و تگ‌ها برای کار بدون اینترنت)
+    if (preg_match('#^field/event/(\d+)/print$#', $adminPath, $em)) {
+        field_render_print_sheets($pdo, (int)$em[1], $me);
     }
 
     // پنل تگ از طریق فهرست (بدون لمس تگ)
@@ -438,6 +466,14 @@ function field_action_place($pdo, $tag, $me, $now) {
         }
     }
 
+    // علامت محل نقطه روی پلان طبقه (اختیاری)
+    if (isset($_POST['plan_x'], $_POST['plan_y']) && $_POST['plan_x'] !== '' && $_POST['plan_y'] !== '') {
+        $pin = parse_plan_pin($_POST['plan_x'], $_POST['plan_y']);
+        if ($pin[0] !== null) {
+            $pdo->prepare('UPDATE spots SET plan_x = :x, plan_y = :y WHERE id = :id')->execute(['x' => $pin[0], 'y' => $pin[1], 'id' => $spotId]);
+        }
+    }
+
     $spot = get_spot_full($pdo, $spotId);
     $photos = field_store_photos($pdo, $spot, true);
 
@@ -514,7 +550,7 @@ function field_render_event_map($pdo, $eventId, $me) {
     $ts = $pdo->prepare('
         SELECT tg.id, tg.name, tg.status, tg.spot_id, tg.placed_at, tg.verified_at, tg.collected_at,
                c.hex AS color_hex, c.name AS color_name,
-               s.name AS spot_name, s.description AS spot_desc, s.photo_near, s.photo_wide,
+               s.name AS spot_name, s.description AS spot_desc, s.photo_near, s.photo_wide, s.plan_x, s.plan_y,
                z.id AS zone_id, z.name AS zone_name, z.sort_order AS zone_order,
                f.id AS floor_id, f.name AS floor_name, f.sort_order AS floor_order,
                pu.username AS placed_by_name, pu.display_name AS placed_by_display
@@ -568,13 +604,34 @@ function field_render_event_map($pdo, $eventId, $me) {
                 $z = $zoneNames[$s['zone_id']];
                 $s['zone_name'] = $z['name'];
                 $s['floor_name'] = isset($floorNames[$z['floor_id']]) ? $floorNames[$z['floor_id']] : '';
+                $s['floor_id'] = (int)$z['floor_id'];
                 $emptySpots[] = $s;
             }
         }
     }
 
-    $filter = isset($_GET['filter']) ? $_GET['filter'] : 'all';
+    $assignment = field_user_assignment($pdo, $eventId, $me['id']);
+    $filter = isset($_GET['filter']) ? $_GET['filter'] : ($assignment ? 'mine' : 'all');
+    if ($assignment) {
+        foreach ($emptySpots as $i => $s) {
+            $zoneFloor = 0;
+            foreach ($structure['zones'] as $z) {
+                if ((int)$z['id'] === (int)$s['zone_id']) {
+                    $zoneFloor = (int)$z['floor_id'];
+                }
+            }
+            $emptySpots[$i]['is_mine'] = field_in_assignment($assignment, $zoneFloor, $s['zone_id']);
+        }
+    }
+    $floorsById = [];
+    if (!empty($event['venue_id'])) {
+        foreach ($structure['floors'] as $f) {
+            $floorsById[(int)$f['id']] = $f;
+        }
+    }
     render_view('field_event', [
+        'floors_by_id' => $floorsById,
+        'assignment' => $assignment,
         'page_title' => 'نقشه و کار میدانی - ' . $event['name'],
         'event' => $event,
         'tags' => $tags,
@@ -583,8 +640,194 @@ function field_render_event_map($pdo, $eventId, $me) {
         'counts' => $counts,
         'empty_spots' => $emptySpots,
         'is_admin' => $isAdmin,
-        'filter' => in_array($filter, ['all', 'todo-install', 'todo-verify', 'todo-collect', 'missing', 'stale'], true) ? $filter : 'all',
+        'filter' => in_array($filter, ['all', 'mine', 'todo-install', 'todo-verify', 'todo-collect', 'missing', 'stale'], true) && ($filter !== 'mine' || $assignment) ? $filter : 'all',
         'me' => $me,
     ]);
+    exit;
+}
+
+/* ==========================================================================
+   تقسیم کار نصاب‌ها
+   ========================================================================== */
+
+/**
+ * طبقات و بخش‌های تخصیص‌یافته به یک کاربر در رویداد
+ *
+ * @return array|null ['floors' => [id => true], 'zones' => [id => true]] یا null اگر تخصیصی ندارد
+ */
+function field_user_assignment($pdo, $eventId, $userId) {
+    $stmt = $pdo->prepare('SELECT floor_id, zone_id FROM event_assignments WHERE event_id = :e AND user_id = :u');
+    $stmt->execute(['e' => (int)$eventId, 'u' => (int)$userId]);
+    $rows = $stmt->fetchAll();
+    if (empty($rows)) {
+        return null;
+    }
+    $out = ['floors' => [], 'zones' => []];
+    foreach ($rows as $r) {
+        if (!empty($r['floor_id'])) {
+            $out['floors'][(int)$r['floor_id']] = true;
+        }
+        if (!empty($r['zone_id'])) {
+            $out['zones'][(int)$r['zone_id']] = true;
+        }
+    }
+    return $out;
+}
+
+function field_in_assignment($assignment, $floorId, $zoneId) {
+    if (!$assignment) {
+        return false;
+    }
+    return isset($assignment['floors'][(int)$floorId]) || isset($assignment['zones'][(int)$zoneId]);
+}
+
+/**
+ * ذخیره تخصیص یک نصاب (جایگزینی کامل تخصیص‌های قبلی او در این رویداد)
+ */
+function field_save_assignment($pdo, $eventId) {
+    $userId = isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0;
+    $uChk = $pdo->prepare('SELECT username FROM admins WHERE id = :id AND is_active = 1');
+    $uChk->execute(['id' => $userId]);
+    $uname = $uChk->fetchColumn();
+    $uChk->closeCursor();
+    $ev = $pdo->prepare('SELECT venue_id FROM events WHERE id = :id');
+    $ev->execute(['id' => $eventId]);
+    $venueId = (int)$ev->fetchColumn();
+    $ev->closeCursor();
+    if ($uname === false || $venueId <= 0) {
+        flash_set('error', 'کاربر یا محل برگزاری معتبر نیست.', 'error');
+        return;
+    }
+    $floors = isset($_POST['floors']) && is_array($_POST['floors']) ? array_map('intval', $_POST['floors']) : [];
+    $zones = isset($_POST['zones']) && is_array($_POST['zones']) ? array_map('intval', $_POST['zones']) : [];
+
+    $validFloors = $pdo->prepare('SELECT id FROM floors WHERE venue_id = :v');
+    $validFloors->execute(['v' => $venueId]);
+    $vf = array_map('intval', $validFloors->fetchAll(PDO::FETCH_COLUMN));
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('DELETE FROM event_assignments WHERE event_id = :e AND user_id = :u')->execute(['e' => $eventId, 'u' => $userId]);
+        $ins = $pdo->prepare('INSERT INTO event_assignments (event_id, user_id, floor_id, zone_id) VALUES (:e, :u, :f, :z)');
+        $n = 0;
+        foreach (array_unique($floors) as $f) {
+            if (in_array($f, $vf, true)) {
+                $ins->execute(['e' => $eventId, 'u' => $userId, 'f' => $f, 'z' => null]);
+                $n++;
+            }
+        }
+        foreach (array_unique($zones) as $z) {
+            if (zone_in_venue($pdo, $z, $venueId)) {
+                $ins->execute(['e' => $eventId, 'u' => $userId, 'f' => null, 'z' => $z]);
+                $n++;
+            }
+        }
+        $pdo->commit();
+    } catch (Exception $ex) {
+        $pdo->rollBack();
+        throw $ex;
+    }
+    flash_set('success', $n > 0 ? 'محدوده کار «' . $uname . '» ذخیره شد.' : 'تخصیص «' . $uname . '» پاک شد (به همه محدوده‌ها دسترسی دارد).', 'success');
+}
+
+/**
+ * صفحه تقسیم کار و گزارش فعالیت کادر در یک رویداد
+ */
+function field_render_team_page($pdo, $eventId) {
+    $ev = $pdo->prepare('SELECT e.*, v.name AS venue_name FROM events e LEFT JOIN venues v ON v.id = e.venue_id WHERE e.id = :id');
+    $ev->execute(['id' => $eventId]);
+    $event = $ev->fetch();
+    $ev->closeCursor();
+    if (!$event) {
+        show_404();
+    }
+    $structure = !empty($event['venue_id']) ? get_venue_structure($pdo, $event['venue_id'], $eventId) : ['floors' => [], 'zones' => [], 'spots' => []];
+    $staff = $pdo->query("SELECT id, username, display_name, role FROM admins WHERE is_active = 1 ORDER BY role DESC, id ASC")->fetchAll();
+
+    $assign = [];
+    $as = $pdo->prepare('SELECT user_id, floor_id, zone_id FROM event_assignments WHERE event_id = :e');
+    $as->execute(['e' => $eventId]);
+    foreach ($as->fetchAll() as $r) {
+        $uid = (int)$r['user_id'];
+        if (!isset($assign[$uid])) {
+            $assign[$uid] = ['floors' => [], 'zones' => []];
+        }
+        if ($r['floor_id']) {
+            $assign[$uid]['floors'][(int)$r['floor_id']] = true;
+        }
+        if ($r['zone_id']) {
+            $assign[$uid]['zones'][(int)$r['zone_id']] = true;
+        }
+    }
+
+    // گزارش فعالیت هر کاربر در این رویداد
+    $activity = [];
+    $ac = $pdo->prepare("
+        SELECT l.user_id,
+            SUM(CASE WHEN l.action IN ('placed', 'moved') THEN 1 ELSE 0 END) AS placed,
+            SUM(CASE WHEN l.action = 'verified' THEN 1 ELSE 0 END) AS verified,
+            SUM(CASE WHEN l.action = 'collected' THEN 1 ELSE 0 END) AS collected,
+            SUM(CASE WHEN l.action IN ('replaced_code', 'replaced_reserve') THEN 1 ELSE 0 END) AS replaced,
+            MAX(l.created_at) AS last_at
+        FROM tag_log l WHERE l.event_id = :e AND l.user_id IS NOT NULL GROUP BY l.user_id
+    ");
+    $ac->execute(['e' => $eventId]);
+    foreach ($ac->fetchAll() as $r) {
+        $activity[(int)$r['user_id']] = $r;
+    }
+    // تگ‌های گم‌شده به تفکیک نصاب
+    $ms = $pdo->prepare("SELECT placed_by, COUNT(*) AS c FROM tags WHERE event_id = :e AND status = 'missing' AND placed_by IS NOT NULL GROUP BY placed_by");
+    $ms->execute(['e' => $eventId]);
+    $missingBy = [];
+    foreach ($ms->fetchAll() as $r) {
+        $missingBy[(int)$r['placed_by']] = (int)$r['c'];
+    }
+
+    render_view('field_team', [
+        'page_title' => 'تقسیم کار - ' . $event['name'],
+        'event' => $event,
+        'structure' => $structure,
+        'staff' => $staff,
+        'assign' => $assign,
+        'activity' => $activity,
+        'missing_by' => $missingBy,
+    ]);
+    exit;
+}
+
+/* ==========================================================================
+   برگه چاپی طبقات
+   ========================================================================== */
+
+function field_render_print_sheets($pdo, $eventId, $me) {
+    $ev = $pdo->prepare('SELECT e.*, v.name AS venue_name FROM events e LEFT JOIN venues v ON v.id = e.venue_id WHERE e.id = :id');
+    $ev->execute(['id' => $eventId]);
+    $event = $ev->fetch();
+    $ev->closeCursor();
+    if (!$event || empty($event['venue_id'])) {
+        show_404();
+    }
+    $structure = get_venue_structure($pdo, $event['venue_id'], $eventId);
+    $tagBySpot = [];
+    $ts = $pdo->prepare("SELECT tg.id, tg.name, tg.status, tg.spot_id FROM tags tg WHERE tg.event_id = :e AND tg.spot_id IS NOT NULL ORDER BY tg.id");
+    $ts->execute(['e' => $eventId]);
+    foreach ($ts->fetchAll() as $t) {
+        // آخرین تگ هر نقطه (نصب فعال بر تگ‌های جمع‌آوری‌شده/گم‌شده قدیمی‌تر مقدم است)
+        if (!isset($tagBySpot[$t['spot_id']]) || in_array($t['status'], ['placed', 'verified'], true)) {
+            $tagBySpot[$t['spot_id']] = $t;
+        }
+    }
+    $assignment = field_user_assignment($pdo, $eventId, $me['id']);
+    $onlyMine = isset($_GET['mine']) && $assignment;
+    $floorFilter = isset($_GET['floor']) ? (int)$_GET['floor'] : 0;
+
+    render_view('field_print', [
+        'page_title' => 'برگه طبقات - ' . $event['name'],
+        'event' => $event,
+        'structure' => $structure,
+        'tag_by_spot' => $tagBySpot,
+        'assignment' => $onlyMine ? $assignment : null,
+        'floor_filter' => $floorFilter,
+    ], null);
     exit;
 }

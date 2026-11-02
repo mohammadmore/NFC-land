@@ -9,7 +9,11 @@ $active_nav = 'field';
 $extra_scripts = ['/assets/field.js'];
 $total = count($tags);
 $base = '/admin/field/event/' . (int)$event['id'];
-$filters = [
+$filters = [];
+if ($assignment) {
+    $filters['mine'] = '👤 کارهای من';
+}
+$filters += [
     'all' => 'همه',
     'todo-install' => 'نصب‌نشده',
     'todo-verify' => 'تأییدنشده',
@@ -19,8 +23,9 @@ $filters = [
 if ($is_admin && (int)$event['is_active'] === 1) {
     $filters['stale'] = '⚠️ مشکوک (' . fa_num(count($stale)) . ')';
 }
-$match = function ($t) use ($filter, $stale) {
+$match = function ($t) use ($filter, $stale, $assignment) {
     switch ($filter) {
+        case 'mine': return empty($t['zone_id']) || field_in_assignment($assignment, $t['floor_id'], $t['zone_id']);
         case 'todo-install': return $t['status'] === 'new';
         case 'todo-verify': return $t['status'] === 'placed';
         case 'todo-collect': return in_array($t['status'], ['placed', 'verified'], true);
@@ -63,6 +68,17 @@ $done = $counts['placed'] + $counts['verified'] + $counts['collected'] + $counts
     </div>
     <h1 class="page-title">🗺️ نقشه و کار میدانی</h1>
     <p class="text-muted"><?= $event['venue_name'] ? '📍 ' . e($event['venue_name']) : '<span class="text-danger">محل برگزاری تعیین نشده است.</span>' ?> · <?= fa_num($total) ?> تگ</p>
+    <?php if (!empty($event['venue_id'])): ?>
+        <div class="field-admin-actions mb-2">
+            <a class="btn btn-sm btn-secondary" href="<?= e(path_url($base . '/print') . ($assignment ? '?mine=1' : '')) ?>" target="_blank" rel="noopener">🖨️ برگه چاپی طبقات<?= $assignment ? ' (محدوده من)' : '' ?></a>
+            <?php if ($is_admin): ?>
+                <a class="btn btn-sm btn-secondary" href="<?= e(path_url($base . '/team')) ?>">👥 تقسیم کار و گزارش نصاب‌ها</a>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
+    <?php if ($assignment): ?>
+        <p class="text-muted" style="font-size: 0.85rem;">👤 محدوده‌ای به شما سپرده شده است؛ فیلتر «کارهای من» فقط همان طبقات/بخش‌ها (و تگ‌های هنوز بی‌محل) را نشان می‌دهد.</p>
+    <?php endif; ?>
 </div>
 
 <!-- خلاصه پیشرفت -->
@@ -105,10 +121,33 @@ $done = $counts['placed'] + $counts['verified'] + $counts['collected'] + $counts
     <p class="text-center text-muted p-4">موردی برای نمایش وجود ندارد.</p>
 <?php endif; ?>
 
-<?php foreach ($groups as $floor): ?>
+<?php foreach ($groups as $gFloorId => $floor):
+    $planBg = isset($floors_by_id[$gFloorId]) ? floor_plan_background_html($floors_by_id[$gFloorId]) : '';
+?>
     <div class="card mb-3 field-floor">
         <div class="card-header"><h2 class="card-title">🏢 <?= e($floor['name']) ?></h2></div>
         <div class="card-body">
+            <?php if ($planBg !== ''): ?>
+                <details class="field-details mb-3" open>
+                    <summary>🗺️ پلان طبقه</summary>
+                    <div class="plan-box mt-2">
+                        <?= $planBg ?>
+                        <?php foreach ($empty_spots as $es): if ((int)$es['floor_id'] !== (int)$gFloorId || $es['plan_x'] === null) continue; ?>
+                            <span class="plan-pin plan-pin-empty" style="left: <?= (float)$es['plan_x'] ?>%; top: <?= (float)$es['plan_y'] ?>%;" title="نقطه خالی: <?= e($es['name']) ?>"></span>
+                        <?php endforeach; ?>
+                        <?php foreach ($floor['zones'] as $pz): foreach ($pz['tags'] as $pt): if ($pt['plan_x'] === null) continue; ?>
+                            <a href="<?= e(path_url('/admin/field/tag/' . (int)$pt['id'])) ?>" class="plan-pin plan-pin-<?= e($pt['status']) ?><?= isset($stale[$pt['id']]) ? ' is-stale' : '' ?>"
+                               style="left: <?= (float)$pt['plan_x'] ?>%; top: <?= (float)$pt['plan_y'] ?>%;"
+                               title="<?= e($pt['name'] . ' — ' . $pt['spot_name'] . ' (' . tag_status_label($pt['status']) . ')') ?>"></a>
+                        <?php endforeach; endforeach; ?>
+                    </div>
+                    <div class="plan-legend">
+                        <?php foreach (['placed', 'verified', 'collected', 'missing'] as $lg): ?><span><i class="plan-pin-dot plan-pin-<?= $lg ?>"></i><?= e(tag_status_label($lg)) ?></span><?php endforeach; ?>
+                        <span><i class="plan-pin-dot plan-pin-empty"></i>نقطه خالی</span>
+                        <?php if (!empty($stale)): ?><span><i class="plan-pin-dot is-stale"></i>مشکوک</span><?php endif; ?>
+                    </div>
+                </details>
+            <?php endif; ?>
             <?php foreach ($floor['zones'] as $zone): ?>
                 <div class="field-zone">
                     <h3 class="field-zone-title">🚪 <?= e($zone['name']) ?> <small class="text-muted">(<?= fa_num(count($zone['tags'])) ?>)</small></h3>
@@ -133,7 +172,12 @@ $done = $counts['placed'] + $counts['verified'] + $counts['collected'] + $counts
     </div>
 <?php endif; ?>
 
-<?php if (in_array($filter, ['all', 'todo-install'], true) && !empty($empty_spots)): ?>
+<?php
+if ($filter === 'mine') {
+    $empty_spots = array_values(array_filter($empty_spots, function ($s) { return !empty($s['is_mine']); }));
+}
+?>
+<?php if (in_array($filter, ['all', 'mine', 'todo-install'], true) && !empty($empty_spots)): ?>
     <div class="card mb-3">
         <div class="card-header"><h2 class="card-title">📍 نقطه‌های خالی این محل (<?= fa_num(count($empty_spots)) ?>)</h2></div>
         <div class="card-body">

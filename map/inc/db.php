@@ -234,6 +234,17 @@ function ensure_database_schema($pdo, $driver) {
                     FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
                 );
                 CREATE INDEX IF NOT EXISTS idx_tag_log_tag ON tag_log (tag_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS event_assignments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id INT NOT NULL,
+                    user_id INT NOT NULL,
+                    floor_id INT NULL,
+                    zone_id INT NULL,
+                    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES admins(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_assign_event_user ON event_assignments (event_id, user_id);
             ');
         } else {
             $mySqlTables = [
@@ -372,6 +383,17 @@ function ensure_database_schema($pdo, $driver) {
                     INDEX idx_tag_log_tag (tag_id, created_at),
                     FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
                     FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+                "CREATE TABLE IF NOT EXISTS event_assignments (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    event_id INT NOT NULL,
+                    user_id INT NOT NULL,
+                    floor_id INT NULL,
+                    zone_id INT NULL,
+                    INDEX idx_assign_event_user (event_id, user_id),
+                    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES admins(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             ];
 
@@ -389,6 +411,14 @@ function ensure_database_schema($pdo, $driver) {
                 'board_token' => 'VARCHAR(32) NULL',
                 'lock_device_team' => 'TINYINT NOT NULL DEFAULT 0',
                 'venue_id' => 'INT NULL',
+            ],
+            'floors' => [
+                'plan_image' => 'VARCHAR(100) NULL',
+                'sketch_json' => 'TEXT NULL',
+            ],
+            'spots' => [
+                'plan_x' => 'DECIMAL(6,3) NULL',
+                'plan_y' => 'DECIMAL(6,3) NULL',
             ],
             'tags' => [
                 'spot_id' => 'INT NULL',

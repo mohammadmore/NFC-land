@@ -20,7 +20,7 @@ $fmtUser = function ($name, $display) {
 $jsData = ['floors' => [], 'zones' => [], 'spots' => []];
 if ($structure) {
     foreach ($structure['floors'] as $f) {
-        $jsData['floors'][] = ['id' => (int)$f['id'], 'name' => $f['name']];
+        $jsData['floors'][] = ['id' => (int)$f['id'], 'name' => $f['name'], 'plan' => floor_plan_background_html($f)];
     }
     foreach ($structure['zones'] as $z) {
         $jsData['zones'][] = ['id' => (int)$z['id'], 'floor_id' => (int)$z['floor_id'], 'name' => $z['name']];
@@ -34,6 +34,8 @@ if ($structure) {
             'thumb' => spot_photo_url($s, 'near', true) ?: spot_photo_url($s, 'wide', true),
             'occupied_by' => ($s['occupied_tag_id'] && (int)$s['occupied_tag_id'] !== (int)$tag['id']) ? $s['occupied_tag_name'] : null,
             'is_current' => ((int)$s['id'] === (int)$tag['spot_id']),
+            'px' => $s['plan_x'] !== null ? (float)$s['plan_x'] : null,
+            'py' => $s['plan_y'] !== null ? (float)$s['plan_y'] : null,
         ];
     }
 }
@@ -149,6 +151,19 @@ $actionBase = path_url('/admin/field/tag/' . (int)$tag['id']);
                     <p class="field-location-desc"><?= nl2br(e($spot['description'])) ?></p>
                 <?php endif; ?>
 
+                <?php
+                $spotFloor = null;
+                foreach ($structure ? $structure['floors'] : [] as $sf) {
+                    if ((int)$sf['id'] === (int)$spot['floor_id']) { $spotFloor = $sf; }
+                }
+                $spotPlanBg = $spotFloor ? floor_plan_background_html($spotFloor) : '';
+                if ($spotPlanBg !== '' && $spot['plan_x'] !== null): ?>
+                    <div class="plan-box mt-2">
+                        <?= $spotPlanBg ?>
+                        <span class="plan-pin plan-pin-current" style="left: <?= (float)$spot['plan_x'] ?>%; top: <?= (float)$spot['plan_y'] ?>%;" title="<?= e($spot['name']) ?>"></span>
+                    </div>
+                <?php endif; ?>
+
                 <div class="field-photos">
                     <?php foreach (['near' => 'عکس نزدیک', 'wide' => 'عکس باز (فضای اطراف)'] as $pk => $pl):
                         $thumb = spot_photo_url($spot, $pk, true);
@@ -249,6 +264,14 @@ $actionBase = path_url('/admin/field/tag/' . (int)$tag['id']);
                                 <label class="form-label">توضیح دقیق محل</label>
                                 <textarea name="spot_desc" class="form-control" rows="2" maxlength="500" placeholder="مثال: پشت تابلوی نقاشی، ارتفاع حدود ۱ متر"></textarea>
                             </div>
+                        </div>
+
+                        <div class="form-group js-plan-picker" style="display: none;">
+                            <label class="form-label">🗺️ محل روی پلان طبقه <small class="text-muted">(اختیاری؛ روی پلان بزنید)</small></label>
+                            <div class="plan-box plan-pick js-plan-box"></div>
+                            <input type="hidden" name="plan_x" class="js-plan-x">
+                            <input type="hidden" name="plan_y" class="js-plan-y">
+                            <button type="button" class="btn btn-sm btn-outline-primary mt-2 js-plan-clear" style="display: none;">پاک کردن علامت</button>
                         </div>
 
                         <?php include __DIR__ . '/partials_field_photos.php'; ?>

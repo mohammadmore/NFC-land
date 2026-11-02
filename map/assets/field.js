@@ -302,6 +302,7 @@ document.addEventListener('DOMContentLoaded', function () {
             fillFloors(res.id);
             fillZones();
             renderSpots();
+            showPlan();
         }).catch(function () { alert('خطا در ارتباط با سرور.'); });
     });
 
@@ -316,6 +317,94 @@ document.addEventListener('DOMContentLoaded', function () {
             fillZones(res.id);
             renderSpots();
         }).catch(function () { alert('خطا در ارتباط با سرور.'); });
+    });
+
+    // انتخاب محل نقطه روی پلان طبقه (در صورت وجود پلان یا کروکی)
+    const planWrap = placeForm.querySelector('.js-plan-picker');
+    const planBox = placeForm.querySelector('.js-plan-box');
+    const planX = placeForm.querySelector('.js-plan-x');
+    const planY = placeForm.querySelector('.js-plan-y');
+    const planClear = placeForm.querySelector('.js-plan-clear');
+    let planFloorId = null;
+
+    function setPlanMarker(x, y) {
+        if (!planBox) return;
+        let m = planBox.querySelector('.plan-pin-current');
+        if (x === null) {
+            if (m) m.remove();
+            planX.value = '';
+            planY.value = '';
+            if (planClear) planClear.style.display = 'none';
+            return;
+        }
+        if (!m) {
+            m = document.createElement('span');
+            m.className = 'plan-pin plan-pin-current';
+            planBox.appendChild(m);
+        }
+        m.style.left = x + '%';
+        m.style.top = y + '%';
+        planX.value = x.toFixed(3);
+        planY.value = y.toFixed(3);
+        if (planClear) planClear.style.display = '';
+    }
+
+    function showPlan() {
+        if (!planWrap) return;
+        const fid = parseInt(floorSel.value, 10) || 0;
+        const floor = data.floors.filter(function (f) { return f.id === fid; })[0];
+        if (!floor || !floor.plan) {
+            planWrap.style.display = 'none';
+            planFloorId = null;
+            setPlanMarker(null);
+            return;
+        }
+        if (planFloorId !== fid) {
+            planBox.innerHTML = floor.plan;
+            planFloorId = fid;
+            // پین سایر نقطه‌های این طبقه برای جهت‌یابی
+            const zoneIds = data.zones.filter(function (z) { return z.floor_id === fid; }).map(function (z) { return z.id; });
+            data.spots.forEach(function (sp) {
+                if (zoneIds.indexOf(sp.zone_id) === -1 || sp.px === null) return;
+                const o = document.createElement('span');
+                o.className = 'plan-pin plan-pin-empty';
+                o.style.left = sp.px + '%';
+                o.style.top = sp.py + '%';
+                o.title = sp.name;
+                planBox.appendChild(o);
+            });
+        }
+        planWrap.style.display = '';
+        prefillPlanFromSpot();
+    }
+
+    function prefillPlanFromSpot() {
+        if (!planWrap || planWrap.style.display === 'none') return;
+        const checked = placeForm.querySelector('input[name=spot_id]:checked');
+        const sp = checked && checked.value !== 'new' ? data.spots.filter(function (s) { return String(s.id) === checked.value; })[0] : null;
+        if (sp && sp.px !== null) {
+            setPlanMarker(sp.px, sp.py);
+        } else {
+            setPlanMarker(null);
+        }
+    }
+
+    if (planBox) {
+        planBox.addEventListener('click', function (e) {
+            const r = planBox.getBoundingClientRect();
+            const x = Math.max(0, Math.min(100, (e.clientX - r.left) / r.width * 100));
+            const y = Math.max(0, Math.min(100, (e.clientY - r.top) / r.height * 100));
+            setPlanMarker(x, y);
+        });
+    }
+    if (planClear) planClear.addEventListener('click', function () { setPlanMarker(null); });
+
+    placeForm.addEventListener('change', function (e) {
+        if (e.target === floorSel) {
+            showPlan();
+        } else if (e.target.name === 'spot_id') {
+            prefillPlanFromSpot();
+        }
     });
 
     // مقداردهی اولیه: طبقه/بخش فعلی تگ، یا آخرین انتخاب این گوشی (برای نصب پشت‌سرهم در یک بخش)
@@ -333,6 +422,7 @@ document.addEventListener('DOMContentLoaded', function () {
     fillFloors(initFloor || (data.floors[0] && data.floors[0].id));
     fillZones(initZone);
     renderSpots();
+    showPlan();
 
     placeForm.addEventListener('submit', function () {
         try {
