@@ -17,10 +17,14 @@ $isPublicView = !empty($body_class) && (strpos($body_class, 'is-scan-view') !== 
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title><?= isset($page_title) ? e($page_title) . ' | ' : '' ?>سامانه امتیازدهی تگ NFC</title>
     <meta name="robots" content="noindex, nofollow">
-    <meta name="theme-color" content="<?= $isPublicView && strpos($body_class, 'is-scan-view') !== false ? '#090d16' : '#ffffff' ?>">
+    <?php $brandPalette = (isset($theme_palette) && is_array($theme_palette)) ? $theme_palette : default_brand_palette(); ?>
+    <meta name="theme-color" content="<?= $isPublicView && strpos($body_class, 'is-scan-view') !== false ? '#0c0a1d' : e($brandPalette[2]) ?>">
     <link rel="stylesheet" href="<?= e(asset_url('/assets/style.css')) ?>">
+    <link rel="stylesheet" href="<?= e(asset_url('/assets/theme.css')) ?>">
+    <style><?= brand_css_vars($brandPalette) ?></style>
 </head>
 <body class="app-body<?= !empty($body_class) ? ' ' . e($body_class) : '' ?>">
+    <?= liquid_background_html() ?>
     <?php if (!$isPublicView): ?>
     <header class="app-header">
         <div class="header-container">

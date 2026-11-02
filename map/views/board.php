@@ -7,6 +7,7 @@ if (!defined('APP_INIT')) {
     die('دسترسی مستقیم مجاز نیست.');
 }
 $extra_scripts = ['/assets/board.js'];
+$theme_palette = event_brand_palette($board_event);
 $body_class = 'is-board-view';
 ?>
 

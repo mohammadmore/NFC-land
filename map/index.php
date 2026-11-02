@@ -146,7 +146,7 @@ if ($uri === '') {
 // لیدربورد عمومی (/board/<token>) - فقط در صورت فعال بودن توسط ادمین
 // ==============================================================================
 if (preg_match('#^board/([A-Za-z0-9_-]{22})(/data)?$#', $uri, $bMatch)) {
-    $bStmt = $pdo->prepare('SELECT id, name, logo_path, public_board, board_token FROM events WHERE board_token = :t LIMIT 1');
+    $bStmt = $pdo->prepare('SELECT id, name, logo_path, public_board, board_token, brand_1, brand_2, brand_3 FROM events WHERE board_token = :t LIMIT 1');
     $bStmt->execute(['t' => $bMatch[1]]);
     $bEvent = $bStmt->fetch();
     $bStmt->closeCursor();
@@ -393,6 +393,18 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
             $logoTintMode = !empty($_POST['logo_tint_mode']) ? 1 : 0;
             $publicBoard = !empty($_POST['public_board']) ? 1 : 0;
             $lockDeviceTeam = !empty($_POST['lock_device_team']) ? 1 : 0;
+            // پالت رنگ برند رویداد (اگر برابر پالت پیش‌فرض باشد، خالی ذخیره می‌شود تا از پیش‌فرض پیروی کند)
+            $brand = [null, null, null];
+            if (empty($_POST['brand_reset'])) {
+                $defPal = default_brand_palette();
+                $picked = [];
+                for ($bi = 1; $bi <= 3; $bi++) {
+                    $picked[] = normalize_hex(isset($_POST['brand_' . $bi]) ? $_POST['brand_' . $bi] : '', $defPal[$bi - 1]);
+                }
+                if ($picked !== $defPal) {
+                    $brand = $picked;
+                }
+            }
             $venueId = isset($_POST['venue_id']) && (int)$_POST['venue_id'] > 0 ? (int)$_POST['venue_id'] : null;
             if ($venueId !== null) {
                 $vChk = $pdo->prepare('SELECT id FROM venues WHERE id = :id');
@@ -446,7 +458,8 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
                 UPDATE events 
                 SET name = :name, positions_count = :positions, show_result_to_scanner = :show_res, is_active = :active,
                     logo_path = :logo_path, logo_tint_mode = :tint_mode, public_board = :public_board, board_token = :board_token,
-                    lock_device_team = :lock_device, venue_id = :venue_id
+                    lock_device_team = :lock_device, venue_id = :venue_id,
+                    brand_1 = :b1, brand_2 = :b2, brand_3 = :b3
                 WHERE id = :id
             ');
             $upStmt->execute([
@@ -460,6 +473,9 @@ if ($uri === 'admin' || strpos($uri, 'admin/') === 0) {
                 'board_token' => $boardToken,
                 'lock_device' => $lockDeviceTeam,
                 'venue_id' => $venueId,
+                'b1' => $brand[0],
+                'b2' => $brand[1],
+                'b3' => $brand[2],
                 'id' => $eventId,
             ]);
 

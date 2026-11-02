@@ -7,6 +7,7 @@ if (!defined('APP_INIT')) {
 }
 $active_nav = 'field';
 $extra_scripts = ['/assets/field.js'];
+$theme_palette = event_brand_palette($event);
 $total = count($tags);
 $base = '/admin/field/event/' . (int)$event['id'];
 $filters = [];

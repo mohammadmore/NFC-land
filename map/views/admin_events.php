@@ -46,6 +46,7 @@ $extra_scripts = ['/assets/admin.js'];
                                         <a href="<?= e(path_url('/admin/events/' . $ev['id'])) ?>" class="event-name-link">
                                             <?= e($ev['name']) ?>
                                         </a>
+                                        <span class="event-palette-dots" title="پالت رنگ رویداد"><?php foreach (event_brand_palette($ev) as $pc): ?><i style="background: <?= e($pc) ?>;"></i><?php endforeach; ?></span>
                                     </td>
                                     <td>
                                         <?php if ((int)$ev['is_active'] === 1): ?>

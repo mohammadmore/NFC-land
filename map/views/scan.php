@@ -19,6 +19,7 @@ $activeQuote = (!empty($just_claimed) && !empty($flash_status['motivation_quote'
 $showResult = (int)$tag['show_result_to_scanner'] === 1;
 
 $extra_scripts = ['/assets/scan.js'];
+$theme_palette = event_brand_palette($tag);
 $body_class = 'is-scan-view';
 ?>
 

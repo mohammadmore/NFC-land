@@ -411,6 +411,9 @@ function ensure_database_schema($pdo, $driver) {
                 'board_token' => 'VARCHAR(32) NULL',
                 'lock_device_team' => 'TINYINT NOT NULL DEFAULT 0',
                 'venue_id' => 'INT NULL',
+                'brand_1' => 'VARCHAR(7) NULL',
+                'brand_2' => 'VARCHAR(7) NULL',
+                'brand_3' => 'VARCHAR(7) NULL',
             ],
             'floors' => [
                 'plan_image' => 'VARCHAR(100) NULL',

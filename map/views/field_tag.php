@@ -8,6 +8,7 @@ if (!defined('APP_INIT')) {
 }
 $active_nav = 'field';
 $extra_scripts = ['/assets/field.js'];
+$theme_palette = event_brand_palette($tag);
 $modes = field_modes();
 $tagHex = normalize_hex(isset($tag['color_hex']) ? $tag['color_hex'] : '', '#94a3b8');
 $hasVenue = !empty($tag['venue_id']);

@@ -6,6 +6,7 @@ if (!defined('APP_INIT')) {
     die('دسترسی مستقیم مجاز نیست.');
 }
 $active_nav = 'field';
+$theme_palette = event_brand_palette($event);
 $base = '/admin/field/event/' . (int)$event['id'];
 $zonesByFloor = [];
 foreach ($structure['zones'] as $z) {

@@ -46,7 +46,10 @@ function handle_scan_request($pdo, $code) {
             e.logo_tint_mode,
             e.public_board,
             e.board_token,
-            e.lock_device_team
+            e.lock_device_team,
+            e.brand_1,
+            e.brand_2,
+            e.brand_3
         FROM tags t
         INNER JOIN events e ON e.id = t.event_id
         LEFT JOIN colors c ON c.id = t.color_id

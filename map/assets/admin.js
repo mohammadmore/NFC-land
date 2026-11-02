@@ -417,4 +417,114 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         }
     }
+
+    // ==========================================
+    // ۸. پالت رنگ برند رویداد: پیش‌نمایش زنده، پالت‌های آماده و استخراج از لوگو
+    // ==========================================
+    const paletteEditor = document.querySelector('.js-palette-editor');
+    if (paletteEditor) {
+        const inputs = Array.prototype.slice.call(paletteEditor.querySelectorAll('.js-brand-input'));
+        const status = paletteEditor.querySelector('.js-palette-status');
+        const resetField = paletteEditor.querySelector('.js-brand-reset');
+
+        const hexToRgb = function (hex) {
+            const h = hex.replace('#', '');
+            return [parseInt(h.substr(0, 2), 16), parseInt(h.substr(2, 2), 16), parseInt(h.substr(4, 2), 16)].join(', ');
+        };
+        const apply = function () {
+            const root = document.documentElement;
+            inputs.forEach(function (inp) {
+                const i = inp.getAttribute('data-index');
+                root.style.setProperty('--brand-' + i, inp.value);
+                root.style.setProperty('--brand-' + i + '-rgb', hexToRgb(inp.value));
+            });
+            if (resetField) resetField.value = '';
+        };
+        const setColors = function (colors, label) {
+            colors.forEach(function (c, i) { if (inputs[i]) inputs[i].value = c; });
+            apply();
+            if (status) status.textContent = (label ? label + ' — ' : '') + 'برای اعمال، «ذخیره تنظیمات رویداد» را بزنید.';
+            const form = paletteEditor.closest('form');
+            if (form) form.dataset.dirty = '1';
+        };
+        inputs.forEach(function (inp) {
+            inp.addEventListener('input', function () { setColors(inputs.map(function (x) { return x.value; })); });
+        });
+        paletteEditor.querySelectorAll('.js-palette-preset').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                setColors(btn.getAttribute('data-colors').split(','), btn.textContent.trim());
+            });
+        });
+
+        // استخراج سه رنگ غالب و پررنگ از لوگو (دسته‌بندی بر اساس فام، وزن‌دهی بر اساس اشباع)
+        const fromLogo = paletteEditor.querySelector('.js-palette-from-logo');
+        if (fromLogo) {
+            fromLogo.addEventListener('click', function () {
+                const img = new Image();
+                img.onload = function () {
+                    const size = 72;
+                    const c = document.createElement('canvas');
+                    c.width = size;
+                    c.height = size;
+                    const ctx = c.getContext('2d');
+                    ctx.drawImage(img, 0, 0, size, size);
+                    let px;
+                    try { px = ctx.getImageData(0, 0, size, size).data; } catch (err) { if (status) status.textContent = 'خواندن لوگو ممکن نشد.'; return; }
+                    const bins = [];
+                    for (let b = 0; b < 24; b++) bins.push({ w: 0, r: 0, g: 0, b: 0 });
+                    for (let i = 0; i < px.length; i += 4) {
+                        if (px[i + 3] < 128) continue;
+                        const r = px[i] / 255, g = px[i + 1] / 255, bl = px[i + 2] / 255;
+                        const max = Math.max(r, g, bl), min = Math.min(r, g, bl);
+                        const l = (max + min) / 2;
+                        const d = max - min;
+                        if (d < 0.0001) continue;
+                        const sat = d / (1 - Math.abs(2 * l - 1));
+                        if (sat < 0.25 || l < 0.15 || l > 0.88) continue;
+                        let h;
+                        if (max === r) h = ((g - bl) / d) % 6; else if (max === g) h = (bl - r) / d + 2; else h = (r - g) / d + 4;
+                        h = (h * 60 + 360) % 360;
+                        const bin = bins[Math.floor(h / 15)];
+                        const w = sat;
+                        bin.w += w; bin.r += px[i] * w; bin.g += px[i + 1] * w; bin.b += px[i + 2] * w;
+                    }
+                    const ranked = bins.map(function (bn, idx) { return { idx: idx, w: bn.w, bn: bn }; })
+                        .filter(function (x) { return x.w > 0; })
+                        .sort(function (a, b) { return b.w - a.w; });
+                    const picked = [];
+                    ranked.forEach(function (x) {
+                        if (picked.length >= 3) return;
+                        const far = picked.every(function (p) { const dd = Math.abs(p.idx - x.idx); return Math.min(dd, 24 - dd) >= 3; });
+                        if (far) picked.push(x);
+                    });
+                    if (!picked.length) { if (status) status.textContent = 'لوگو رنگ پررنگ کافی ندارد؛ یک پالت آماده انتخاب کنید.'; return; }
+                    const toHex = function (x) {
+                        const r = Math.round(x.bn.r / x.bn.w), g = Math.round(x.bn.g / x.bn.w), b = Math.round(x.bn.b / x.bn.w);
+                        return '#' + [r, g, b].map(function (v) { return ('0' + v.toString(16)).slice(-2); }).join('');
+                    };
+                    const colors = picked.map(toHex);
+                    // اگر کمتر از سه رنگ پیدا شد، رنگ‌های هم‌خانواده با چرخش فام ساخته می‌شوند
+                    const rotate = function (hex, deg) {
+                        const n = parseInt(hex.slice(1), 16);
+                        let r = (n >> 16) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+                        const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+                        let h = 0, s = 0;
+                        if (d) {
+                            s = d / (1 - Math.abs(2 * l - 1));
+                            if (max === r) h = ((g - b) / d) % 6; else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+                            h *= 60;
+                        }
+                        h = (h + deg + 360) % 360;
+                        const C = (1 - Math.abs(2 * l - 1)) * s, X = C * (1 - Math.abs((h / 60) % 2 - 1)), m = l - C / 2;
+                        const seg = [[C, X, 0], [X, C, 0], [0, C, X], [0, X, C], [X, 0, C], [C, 0, X]][Math.floor(h / 60) % 6];
+                        return '#' + seg.map(function (v) { return ('0' + Math.round((v + m) * 255).toString(16)).slice(-2); }).join('');
+                    };
+                    while (colors.length < 3) colors.push(rotate(colors[0], colors.length === 1 ? 45 : -45));
+                    setColors(colors, 'رنگ‌ها از لوگو استخراج شد');
+                };
+                img.onerror = function () { if (status) status.textContent = 'بارگذاری لوگو ممکن نشد.'; };
+                img.src = fromLogo.getAttribute('data-logo');
+            });
+        }
+    }
 });

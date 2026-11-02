@@ -33,6 +33,7 @@ function field_get_tag($pdo, $where, $value) {
     $col = $where === 'code' ? 'tg.code' : 'tg.id';
     $stmt = $pdo->prepare("
         SELECT tg.*, e.name AS event_name, e.venue_id, e.positions_count, e.is_active AS event_active,
+               e.brand_1, e.brand_2, e.brand_3,
                c.name AS color_name, c.hex AS color_hex,
                v.name AS venue_name,
                pu.username AS placed_by_name, pu.display_name AS placed_by_display,

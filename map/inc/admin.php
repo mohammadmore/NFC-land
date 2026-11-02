@@ -236,8 +236,8 @@ function duplicate_event($pdo, $sourceEventId) {
         $newName = 'کپی از ' . $srcEvent['name'];
         $nowUtc = gmdate('Y-m-d H:i:s');
         $insEv = $pdo->prepare('
-            INSERT INTO events (name, positions_count, show_result_to_scanner, is_active, logo_tint_mode, public_board, board_token, lock_device_team, venue_id, created_at)
-            VALUES (:name, :positions, :show_res, :active, :tint, 0, NULL, :lock_device, :venue_id, :created)
+            INSERT INTO events (name, positions_count, show_result_to_scanner, is_active, logo_tint_mode, public_board, board_token, lock_device_team, venue_id, brand_1, brand_2, brand_3, created_at)
+            VALUES (:name, :positions, :show_res, :active, :tint, 0, NULL, :lock_device, :venue_id, :b1, :b2, :b3, :created)
         ');
         $insEv->execute([
             'name' => str_limit_u($newName, 150),
@@ -247,6 +247,9 @@ function duplicate_event($pdo, $sourceEventId) {
             'tint' => isset($srcEvent['logo_tint_mode']) ? (int)$srcEvent['logo_tint_mode'] : 1,
             'lock_device' => isset($srcEvent['lock_device_team']) ? (int)$srcEvent['lock_device_team'] : 0,
             'venue_id' => !empty($srcEvent['venue_id']) ? (int)$srcEvent['venue_id'] : null,
+            'b1' => !empty($srcEvent['brand_1']) ? $srcEvent['brand_1'] : null,
+            'b2' => !empty($srcEvent['brand_2']) ? $srcEvent['brand_2'] : null,
+            'b3' => !empty($srcEvent['brand_3']) ? $srcEvent['brand_3'] : null,
             'created' => $nowUtc,
         ]);
         $newEventId = (int)$pdo->lastInsertId();

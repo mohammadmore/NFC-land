@@ -555,3 +555,69 @@ function asset_url($path) {
     $v = is_file($abs) ? filemtime($abs) : 0;
     return path_url($path) . ($v ? '?v=' . $v : '');
 }
+
+/* ==========================================================================
+   پالت رنگ برند (گرادیان‌های سیال پس‌زمینه و شیشه‌ها)
+   ========================================================================== */
+
+/**
+ * پالت پیش‌فرض سامانه: صورتی، آبی، بنفش
+ */
+function default_brand_palette() {
+    return ['#ec4899', '#3b82f6', '#8b5cf6'];
+}
+
+/**
+ * پالت‌های آماده برای انتخاب سریع در تنظیمات رویداد
+ */
+function brand_palette_presets() {
+    return [
+        'پیش‌فرض' => ['#ec4899', '#3b82f6', '#8b5cf6'],
+        'اقیانوسی' => ['#06b6d4', '#3b82f6', '#6366f1'],
+        'غروب' => ['#f97316', '#ec4899', '#a855f7'],
+        'جنگلی' => ['#22c55e', '#14b8a6', '#0ea5e9'],
+        'طلایی شب' => ['#f59e0b', '#ef4444', '#7c3aed'],
+        'یاسی' => ['#d946ef', '#a78bfa', '#818cf8'],
+        'مرجانی' => ['#fb7185', '#f472b6', '#38bdf8'],
+    ];
+}
+
+/**
+ * پالت یک رویداد (ستون‌های brand_1..3) با جایگزینی مقادیر خالی/نامعتبر از پالت پیش‌فرض
+ */
+function event_brand_palette($row) {
+    $def = default_brand_palette();
+    $out = [];
+    for ($i = 1; $i <= 3; $i++) {
+        $v = is_array($row) && isset($row['brand_' . $i]) ? $row['brand_' . $i] : '';
+        $out[] = ($v !== '' && $v !== null) ? normalize_hex($v, $def[$i - 1]) : $def[$i - 1];
+    }
+    return $out;
+}
+
+/**
+ * آیا رویداد پالت اختصاصی دارد؟
+ */
+function event_has_custom_palette($row) {
+    return is_array($row) && (!empty($row['brand_1']) || !empty($row['brand_2']) || !empty($row['brand_3']));
+}
+
+/**
+ * متغیرهای CSS پالت برای تزریق در <style>
+ */
+function brand_css_vars($palette) {
+    $css = ':root{';
+    foreach (array_values($palette) as $i => $hex) {
+        $hex = normalize_hex($hex, default_brand_palette()[$i]);
+        $n = $i + 1;
+        $css .= '--brand-' . $n . ':' . $hex . ';--brand-' . $n . '-rgb:' . hexdec(substr($hex, 1, 2)) . ',' . hexdec(substr($hex, 3, 2)) . ',' . hexdec(substr($hex, 5, 2)) . ';';
+    }
+    return $css . '}';
+}
+
+/**
+ * لایه پس‌زمینه مایع (لکه‌های گرادیانی متحرک)
+ */
+function liquid_background_html() {
+    return '<div class="liquid-bg" aria-hidden="true"><span class="liquid-blob liquid-blob-1"></span><span class="liquid-blob liquid-blob-2"></span><span class="liquid-blob liquid-blob-3"></span><span class="liquid-blob liquid-blob-4"></span></div>';
+}

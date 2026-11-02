@@ -7,6 +7,7 @@ if (!defined('APP_INIT')) {
 }
 $active_nav = 'events';
 $extra_scripts = ['/assets/admin.js'];
+$theme_palette = event_brand_palette($event);
 $currentTab = isset($_GET['tab']) ? $_GET['tab'] : 'leaderboard';
 $validTabs = ['settings', 'colors', 'teams', 'tags', 'leaderboard', 'export'];
 if (!in_array($currentTab, $validTabs, true)) {
@@ -573,6 +574,40 @@ $positionsCount = (int)$event['positions_count'];
                                     انطباق هوشمند رنگ و هاله نوری لوگو با رنگ تگ اسکن‌شده
                                 </label>
                             </div>
+                        </div>
+
+                        <!-- پالت رنگ برند رویداد -->
+                        <div class="logo-setting-box p-3 my-3 palette-editor js-palette-editor" style="border-radius: 14px;">
+                            <h4 style="font-size: 1rem; margin-bottom: 0;">🎨 پالت رنگ برند</h4>
+                            <p class="text-muted" style="font-size: 0.85rem; margin: 0;">
+                                سه رنگ هویت برند؛ گرادیان‌های سیال پس‌زمینه و جلوه‌های شیشه‌ای صفحه اسکن تگ‌ها، لیدربورد عمومی و پنل‌های مدیریتی همین رویداد با این رنگ‌ها ساخته می‌شوند. تغییرات بلافاصله روی همین صفحه پیش‌نمایش داده می‌شود.
+                            </p>
+                            <?php $curPal = event_brand_palette($event); ?>
+                            <div class="palette-preview js-palette-preview" aria-hidden="true">
+                                <span class="liquid-blob liquid-blob-1"></span><span class="liquid-blob liquid-blob-2"></span><span class="liquid-blob liquid-blob-3"></span>
+                                <div class="palette-preview-glass"><span><?= e($event['name']) ?></span></div>
+                            </div>
+                            <div class="palette-inputs">
+                                <?php foreach (['رنگ اول', 'رنگ دوم', 'رنگ سوم'] as $pi => $pl): ?>
+                                    <label class="palette-input">
+                                        <input type="color" name="brand_<?= $pi + 1 ?>" value="<?= e($curPal[$pi]) ?>" class="js-brand-input" data-index="<?= $pi + 1 ?>">
+                                        <span><?= e($pl) ?></span>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                            <div class="palette-presets">
+                                <?php foreach (brand_palette_presets() as $pn => $pc): ?>
+                                    <button type="button" class="palette-preset js-palette-preset" data-colors="<?= e(implode(',', $pc)) ?>">
+                                        <span class="palette-swatch"><?php foreach ($pc as $c): ?><i style="background: <?= e($c) ?>;"></i><?php endforeach; ?></span>
+                                        <?= e($pn) ?>
+                                    </button>
+                                <?php endforeach; ?>
+                                <?php if (!empty($event['logo_path']) && strpos($event['logo_path'], 'assets/uploads/') === 0): ?>
+                                    <button type="button" class="palette-preset js-palette-from-logo" data-logo="<?= e(path_url('/' . $event['logo_path'])) ?>">🪄 استخراج از لوگو</button>
+                                <?php endif; ?>
+                            </div>
+                            <input type="hidden" name="brand_reset" value="" class="js-brand-reset">
+                            <small class="text-muted js-palette-status" aria-live="polite"><?= event_has_custom_palette($event) ? 'این رویداد پالت اختصاصی دارد.' : 'پالت پیش‌فرض سامانه (صورتی، آبی، بنفش) استفاده می‌شود.' ?></small>
                         </div>
 
                         <div class="form-group">

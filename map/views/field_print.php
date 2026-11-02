@@ -23,8 +23,11 @@ foreach ($structure['spots'] as $s) {
     <meta name="robots" content="noindex, nofollow">
     <title><?= e($page_title) ?></title>
     <link rel="stylesheet" href="<?= e(asset_url('/assets/style.css')) ?>">
+    <link rel="stylesheet" href="<?= e(asset_url('/assets/theme.css')) ?>">
+    <style><?= brand_css_vars(event_brand_palette($event)) ?></style>
 </head>
 <body class="print-page">
+    <?= liquid_background_html() ?>
     <div class="print-toolbar no-print">
         <div><strong><?= e($event['name']) ?></strong> <span class="text-muted">— <?= e($event['venue_name']) ?></span><?= $assignment ? ' <span class="badge badge-info">محدوده من</span>' : '' ?></div>
         <button type="button" class="btn btn-primary" onclick="window.print()">🖨️ چاپ</button>

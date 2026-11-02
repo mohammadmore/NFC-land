@@ -1,0 +1,363 @@
+/**
+ * NFC Event Tag Scoring - Liquid Glass Theme
+ *
+ * گلسمورفیسم با گرادیان‌های سیال صورتی، آبی و بنفش.
+ * رنگ‌های برند از متغیرهای --brand-1/2/3 خوانده می‌شوند که برای هر رویداد
+ * (در صفحه اسکن، لیدربورد عمومی و پنل‌های مدیریتی همان رویداد) جداگانه تنظیم می‌شوند.
+ * این فایل پس از style.css بارگذاری می‌شود و ظاهر اجزا را بازنویسی می‌کند.
+ */
+
+:root {
+    /* مقادیر پیش‌فرض؛ در layout.php برای هر رویداد بازنویسی می‌شوند */
+    --brand-1: #ec4899;
+    --brand-2: #3b82f6;
+    --brand-3: #8b5cf6;
+    --brand-1-rgb: 236, 72, 153;
+    --brand-2-rgb: 59, 130, 246;
+    --brand-3-rgb: 139, 92, 246;
+
+    --bg-base: #f5f3ff;
+    --glass-bg: rgba(255, 255, 255, 0.58);
+    --glass-bg-strong: rgba(255, 255, 255, 0.78);
+    --glass-bg-soft: rgba(255, 255, 255, 0.42);
+    --glass-border: rgba(255, 255, 255, 0.7);
+    --glass-blur: 18px;
+    --glass-shadow: 0 10px 34px rgba(46, 16, 101, 0.12), 0 2px 6px rgba(46, 16, 101, 0.06);
+    --brand-gradient: linear-gradient(135deg, var(--brand-1) 0%, var(--brand-3) 50%, var(--brand-2) 100%);
+    --brand-gradient-btn: linear-gradient(135deg, var(--brand-3) 0%, var(--brand-2) 100%);
+
+    --primary-color: var(--brand-3);
+    --primary-hover: var(--brand-2);
+    --text-main: #1e1b3a;
+    --text-muted: #5b5876;
+    --border-color: rgba(120, 100, 180, 0.18);
+    --card-bg: var(--glass-bg);
+    --radius: 16px;
+}
+
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+    :root {
+        /* رنگ متن/لینک خوانا از رنگ برند (تیره‌تر از خود رنگ) */
+        --primary-color: color-mix(in srgb, var(--brand-3) 78%, #1e1b4b);
+        --primary-hover: color-mix(in srgb, var(--brand-2) 70%, #1e1b4b);
+    }
+}
+
+/* ==========================================================================
+   پس‌زمینه مایع: لکه‌های گرادیانی بزرگ با حرکت بسیار آهسته
+   (بدون filter: blur تا روی گوشی‌ها سبک بماند؛ نرمی از خود گرادیان شعاعی است)
+   ========================================================================== */
+html { background: var(--bg-base); }
+body { background: transparent !important; position: relative; }
+
+.liquid-bg {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    background:
+        radial-gradient(120% 90% at 100% 0%, rgba(var(--brand-1-rgb), 0.16) 0%, transparent 60%),
+        radial-gradient(120% 90% at 0% 100%, rgba(var(--brand-2-rgb), 0.16) 0%, transparent 60%),
+        var(--bg-base);
+    pointer-events: none;
+}
+.liquid-blob {
+    position: absolute;
+    width: 75vmax;
+    height: 75vmax;
+    border-radius: 42% 58% 63% 37% / 41% 44% 56% 59%;
+    opacity: 0.55;
+    will-change: transform, border-radius;
+}
+.liquid-blob-1 {
+    top: -30vmax; right: -20vmax;
+    background: radial-gradient(circle at 50% 50%, rgba(var(--brand-1-rgb), 0.85) 0%, rgba(var(--brand-1-rgb), 0.35) 38%, rgba(var(--brand-1-rgb), 0) 68%);
+    animation: liquidDrift1 110s ease-in-out infinite alternate, liquidMorph 70s ease-in-out infinite alternate;
+}
+.liquid-blob-2 {
+    bottom: -35vmax; left: -25vmax;
+    background: radial-gradient(circle at 50% 50%, rgba(var(--brand-2-rgb), 0.8) 0%, rgba(var(--brand-2-rgb), 0.32) 38%, rgba(var(--brand-2-rgb), 0) 68%);
+    animation: liquidDrift2 130s ease-in-out infinite alternate, liquidMorph 85s ease-in-out infinite alternate-reverse;
+}
+.liquid-blob-3 {
+    top: 20%; left: 15%;
+    width: 60vmax; height: 60vmax;
+    background: radial-gradient(circle at 50% 50%, rgba(var(--brand-3-rgb), 0.75) 0%, rgba(var(--brand-3-rgb), 0.28) 40%, rgba(var(--brand-3-rgb), 0) 68%);
+    animation: liquidDrift3 150s ease-in-out infinite alternate, liquidMorph 95s ease-in-out infinite alternate;
+}
+.liquid-blob-4 {
+    top: 55%; right: 5%;
+    width: 45vmax; height: 45vmax;
+    opacity: 0.4;
+    background: radial-gradient(circle at 50% 50%, rgba(var(--brand-1-rgb), 0.6) 0%, rgba(var(--brand-3-rgb), 0.25) 45%, rgba(var(--brand-3-rgb), 0) 70%);
+    animation: liquidDrift2 170s ease-in-out infinite alternate-reverse, liquidMorph 120s ease-in-out infinite alternate-reverse;
+}
+@keyframes liquidDrift1 {
+    0% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+    50% { transform: translate3d(-9vmax, 7vmax, 0) rotate(25deg) scale(1.08); }
+    100% { transform: translate3d(-4vmax, 14vmax, 0) rotate(-15deg) scale(0.96); }
+}
+@keyframes liquidDrift2 {
+    0% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+    50% { transform: translate3d(10vmax, -8vmax, 0) rotate(-20deg) scale(1.1); }
+    100% { transform: translate3d(4vmax, -14vmax, 0) rotate(18deg) scale(0.95); }
+}
+@keyframes liquidDrift3 {
+    0% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+    50% { transform: translate3d(12vmax, 6vmax, 0) rotate(30deg) scale(0.92); }
+    100% { transform: translate3d(-8vmax, -6vmax, 0) rotate(-25deg) scale(1.1); }
+}
+@keyframes liquidMorph {
+    0% { border-radius: 42% 58% 63% 37% / 41% 44% 56% 59%; }
+    33% { border-radius: 58% 42% 38% 62% / 55% 61% 39% 45%; }
+    66% { border-radius: 36% 64% 55% 45% / 62% 38% 62% 38%; }
+    100% { border-radius: 63% 37% 45% 55% / 40% 57% 43% 60%; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .liquid-blob { animation: none !important; }
+}
+
+/* ==========================================================================
+   اجزای شیشه‌ای (پنل‌های مدیریت و صفحات عمومی روشن)
+   ========================================================================== */
+.app-header {
+    background: var(--glass-bg) !important;
+    backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+    border-bottom: 1px solid var(--glass-border) !important;
+    box-shadow: 0 4px 24px rgba(46, 16, 101, 0.08);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+}
+.brand-link { color: var(--text-main) !important; }
+.brand-text {
+    background: var(--brand-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-weight: 800;
+}
+.nav-link { color: var(--text-muted); border-radius: 999px; }
+.nav-link:hover, .nav-link.active {
+    color: var(--primary-color) !important;
+    background: rgba(var(--brand-3-rgb), 0.12) !important;
+}
+
+.card, .modal-box, .error-card, .print-toolbar {
+    background: var(--glass-bg) !important;
+    backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+    border: 1px solid var(--glass-border) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: var(--glass-shadow) !important;
+}
+.card-header, .card-footer, .modal-header, .modal-footer {
+    background: rgba(255, 255, 255, 0.28) !important;
+    border-color: rgba(255, 255, 255, 0.55) !important;
+}
+.sticky-save-bar {
+    background: var(--glass-bg-strong) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+.page-title { color: var(--text-main); }
+
+/* جدول‌ها */
+.table th {
+    background: rgba(255, 255, 255, 0.35) !important;
+    color: var(--text-muted);
+    border-color: rgba(255, 255, 255, 0.6) !important;
+}
+.table td { border-color: rgba(120, 100, 180, 0.12) !important; }
+.table-hover tbody tr:hover, .table tbody tr:hover { background: rgba(var(--brand-3-rgb), 0.06) !important; }
+
+/* تب‌ها */
+.nav-tabs { border-bottom-color: rgba(255, 255, 255, 0.6) !important; gap: 0.35rem; flex-wrap: wrap; }
+.tab-item {
+    background: var(--glass-bg-soft);
+    border: 1px solid transparent;
+    border-radius: 12px 12px 0 0;
+    color: var(--text-muted);
+}
+.tab-item:hover { color: var(--primary-color); background: var(--glass-bg); }
+.tab-item.active {
+    background: var(--glass-bg-strong) !important;
+    color: var(--primary-color) !important;
+    border-color: var(--glass-border) !important;
+    border-bottom-color: transparent !important;
+    box-shadow: inset 0 3px 0 0 var(--brand-3);
+}
+
+/* فرم‌ها */
+.form-control {
+    background-color: rgba(255, 255, 255, 0.72) !important;
+    border: 1px solid rgba(120, 100, 180, 0.22) !important;
+    border-radius: 12px !important;
+    color: var(--text-main);
+}
+.form-control:focus {
+    border-color: rgba(var(--brand-3-rgb), 0.6) !important;
+    box-shadow: 0 0 0 4px rgba(var(--brand-3-rgb), 0.16) !important;
+    outline: none;
+}
+.form-control.is-changed { background-color: rgba(254, 243, 199, 0.85) !important; border-color: #f59e0b !important; }
+.form-control-color { padding: 0.2rem !important; }
+
+/* دکمه‌ها */
+.btn { border-radius: 12px; transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease; }
+.btn:active { transform: scale(0.98); }
+.btn-primary {
+    background: var(--brand-gradient-btn) !important;
+    border: none !important;
+    color: #fff !important;
+    box-shadow: 0 6px 18px rgba(var(--brand-3-rgb), 0.35);
+}
+.btn-primary:hover { filter: brightness(1.07) saturate(1.1); box-shadow: 0 8px 24px rgba(var(--brand-3-rgb), 0.45); }
+.btn-success { box-shadow: 0 6px 16px rgba(22, 163, 74, 0.28); }
+.btn-danger { box-shadow: 0 6px 16px rgba(220, 38, 38, 0.22); }
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.55) !important;
+    color: var(--text-main) !important;
+    border: 1px solid rgba(120, 100, 180, 0.25) !important;
+}
+.btn-secondary:hover { background: rgba(255, 255, 255, 0.8) !important; }
+.btn-outline-primary {
+    background: rgba(255, 255, 255, 0.45) !important;
+    color: var(--primary-color) !important;
+    border: 1px solid rgba(var(--brand-3-rgb), 0.45) !important;
+}
+.btn-outline-primary:hover { background: rgba(var(--brand-3-rgb), 0.12) !important; }
+
+/* پیام‌ها و برچسب‌ها */
+.alert {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 14px !important;
+}
+.alert-success { background: rgba(240, 253, 244, 0.78) !important; }
+.alert-error { background: rgba(254, 242, 242, 0.8) !important; }
+.alert-warning { background: rgba(255, 251, 235, 0.8) !important; }
+.alert-info { background: rgba(var(--brand-2-rgb), 0.1) !important; border-color: rgba(var(--brand-2-rgb), 0.3) !important; }
+.badge { border-radius: 999px; }
+.badge-info { background: rgba(var(--brand-2-rgb), 0.14) !important; color: var(--primary-hover) !important; }
+.badge-secondary { background: rgba(255, 255, 255, 0.6) !important; }
+.points-badge { background: var(--brand-gradient) !important; color: #fff !important; }
+a { color: var(--primary-color); }
+
+/* فوتر */
+.app-footer {
+    background: rgba(255, 255, 255, 0.35) !important;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-top: 1px solid var(--glass-border) !important;
+}
+
+/* اجزای سفید قدیمی ← شیشه نیمه‌شفاف (بدون blur برای سبکی فهرست‌های بلند) */
+.field-mode-btn, .field-spot-card, .field-tag-row, .venue-spot, .plan-spot-item, .field-filter,
+.export-box, .claim-chip, .tag-claims-block, .venue-zone, .field-location-desc, .field-photo-preview,
+.assign-floor, .print-floor, .field-photo-empty, .plan-box {
+    background: rgba(255, 255, 255, 0.55) !important;
+    border-color: rgba(255, 255, 255, 0.75) !important;
+}
+.field-tag-row:hover, .field-spot-card:hover { background: rgba(255, 255, 255, 0.78) !important; }
+.field-tag-row.is-stale { background: rgba(254, 226, 226, 0.75) !important; border-color: #fca5a5 !important; }
+.field-mode-btn.is-active, .field-filter.is-active {
+    background: var(--brand-gradient-btn) !important;
+    border-color: transparent !important;
+    color: #fff !important;
+    box-shadow: 0 6px 18px rgba(var(--brand-3-rgb), 0.3);
+}
+.field-spot-card:has(input:checked) { border-color: var(--brand-3) !important; background: rgba(var(--brand-3-rgb), 0.1) !important; }
+.tag-row.row-next td { background-color: rgba(var(--brand-2-rgb), 0.1) !important; box-shadow: inset 0 2px 0 var(--brand-2), inset 0 -2px 0 var(--brand-2) !important; }
+.field-progress { background: rgba(255, 255, 255, 0.6) !important; }
+.field-tag-stripe { background: linear-gradient(90deg, var(--tag-hex, var(--brand-3)), var(--brand-3), var(--brand-2)) !important; }
+.plan-spot-item.is-selected { border-color: var(--brand-1) !important; background: rgba(var(--brand-1-rgb), 0.1) !important; }
+
+/* لیدربورد عمومی */
+.board-title {
+    background: var(--brand-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+.board-top-1 { background: rgba(var(--brand-1-rgb), 0.12) !important; }
+.board-top-2 { background: rgba(var(--brand-3-rgb), 0.1) !important; }
+.board-top-3 { background: rgba(var(--brand-2-rgb), 0.1) !important; }
+
+/* ==========================================================================
+   صفحه اسکن تگ: پس‌زمینه مایع تیره با رنگ‌های برند + کارت شیشه‌ای تیره
+   (رنگ خود تگ همچنان برای نشان، هاله و دکمه ثبت استفاده می‌شود)
+   ========================================================================== */
+body.is-scan-view { --bg-base: #0c0a1d; }
+html:has(body.is-scan-view) { background: #0c0a1d; }
+body.is-scan-view .liquid-blob { opacity: 0.6; }
+body.is-scan-view .liquid-bg {
+    background:
+        radial-gradient(120% 80% at 50% -10%, rgba(var(--brand-3-rgb), 0.35) 0%, transparent 60%),
+        #0c0a1d;
+}
+.is-scan-view .scan-page-wrapper { background: transparent !important; }
+.is-scan-view .scan-glass-card {
+    background: linear-gradient(145deg, rgba(30, 27, 58, 0.55) 0%, rgba(15, 12, 35, 0.68) 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.16) !important;
+    border-top-color: rgba(255, 255, 255, 0.32) !important;
+    box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.55), 0 0 40px rgba(var(--brand-3-rgb), 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.25) !important;
+}
+.is-scan-view .app-footer { background: rgba(12, 10, 29, 0.45) !important; border-top-color: rgba(255, 255, 255, 0.08) !important; }
+.is-scan-view .team-pick:hover, .is-scan-view .team-pick:focus-visible { box-shadow: 0 0 0 1px rgba(var(--brand-3-rgb), 0.5), 0 6px 18px rgba(var(--brand-3-rgb), 0.25); }
+.is-scan-view .scan-event-badge { border-color: rgba(var(--brand-3-rgb), 0.45) !important; background: rgba(var(--brand-3-rgb), 0.18) !important; }
+.glass-modal-backdrop { background: rgba(12, 10, 29, 0.55) !important; }
+
+/* ==========================================================================
+   تنظیمات پالت رنگ رویداد
+   ========================================================================== */
+.palette-editor { display: grid; gap: 0.75rem; }
+.palette-inputs { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+.palette-input { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; font-size: 0.85rem; }
+.palette-input input[type=color] { width: 64px; height: 44px; border-radius: 12px; border: 2px solid rgba(255, 255, 255, 0.8); padding: 0; cursor: pointer; background: none; }
+.palette-presets { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.palette-preset {
+    display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.65rem 0.3rem 0.35rem;
+    border-radius: 999px; border: 1px solid rgba(120, 100, 180, 0.25); background: rgba(255, 255, 255, 0.6);
+    font-family: inherit; font-size: 0.85rem; cursor: pointer; color: var(--text-main);
+}
+.palette-preset:hover { background: rgba(255, 255, 255, 0.9); }
+.palette-swatch { display: inline-flex; border-radius: 999px; overflow: hidden; width: 42px; height: 18px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08); }
+.palette-swatch i { flex: 1; }
+.palette-preview {
+    position: relative; height: 110px; border-radius: 16px; overflow: hidden;
+    background: #f5f3ff; border: 1px solid rgba(255, 255, 255, 0.8);
+}
+.palette-preview .liquid-blob { width: 260px; height: 260px; opacity: 0.75; }
+.palette-preview .liquid-blob-1 { top: -120px; right: -60px; }
+.palette-preview .liquid-blob-2 { bottom: -140px; left: -80px; }
+.palette-preview .liquid-blob-3 { top: -40px; left: 35%; width: 200px; height: 200px; }
+.palette-preview-glass {
+    position: absolute; inset: 22px 18% 22px 18%; border-radius: 14px;
+    background: rgba(255, 255, 255, 0.5); border: 1px solid rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    display: flex; align-items: center; justify-content: center; font-weight: 800;
+}
+.palette-preview-glass span { background: var(--brand-gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.event-palette-dots { display: inline-flex; gap: 2px; vertical-align: middle; margin-inline-start: 0.35rem; }
+.event-palette-dots i { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9); }
+
+/* ==========================================================================
+   چاپ: بدون پس‌زمینه و شیشه
+   ========================================================================== */
+@media print {
+    .liquid-bg { display: none !important; }
+    html, body { background: #fff !important; }
+    .card, .print-floor, .plan-box, .print-label { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; box-shadow: none !important; background: #fff !important; }
+}
+
+/* موبایل: منوی بالا جمع‌وجورتر */
+@media (max-width: 600px) {
+    .header-nav { gap: 0.15rem; }
+    .nav-link { padding: 0.35rem 0.55rem; font-size: 0.88rem; }
+}
+
+/* جعبه‌های تنظیمات با رنگ ثابت قدیمی (inline) ← شیشه */
+.logo-setting-box { background: rgba(255, 255, 255, 0.45) !important; border: 1px solid rgba(255, 255, 255, 0.75) !important; border-radius: 14px !important; }
+.current-logo-preview { background: rgba(255, 255, 255, 0.6) !important; }

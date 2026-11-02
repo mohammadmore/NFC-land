@@ -15,8 +15,11 @@ if (!defined('APP_INIT')) {
     <meta name="robots" content="noindex, nofollow">
     <title><?= e($page_title) ?></title>
     <link rel="stylesheet" href="<?= e(asset_url('/assets/style.css')) ?>">
+    <link rel="stylesheet" href="<?= e(asset_url('/assets/theme.css')) ?>">
+    <style><?= brand_css_vars(event_brand_palette($event)) ?></style>
 </head>
 <body class="print-page">
+    <?= liquid_background_html() ?>
     <div class="print-toolbar no-print">
         <div>
             <strong><?= e($event['name']) ?></strong>
